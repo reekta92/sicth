@@ -5,20 +5,14 @@
 [![License: GPL-3.0-only](https://img.shields.io/badge/License-GPL_3.0_only-blue.svg)](LICENSE)
 [![AUR Package](https://img.shields.io/aur/version/sicth-bin)](https://aur.archlinux.org/packages/sicth-bin)
 
-A minimal TUI file navigator with fuzzy search, Nerd Font icons, and shell integration.
-
-<!-- TODO: Add screenshot or GIF here -->
+`sicth` has a one goal and one goal only, **to navigate through filesystem** interactively and blazingly fast. Can be considered as an alternative to [broot](https://github.com/canop/broot) though **it's as simple as possible and non-disruptive to the terminal window by design**.
 
 ## Features
 
-* Fuzzy search powered by nucleo
-* Nerd Font file-type icons with syntax-aware coloring
-* Inline popup viewport (doesn't take over full terminal)
+* Fuzzy search powered by `nucleo`
 * Mouse support (click, double-click, scroll)
 * Shell integration — `cd` on exit via `sc` wrapper, `!command` execution
 * `.gitignore`-aware recursive search
-* Vim-style keybinds (Ctrl+j/k/d/u/h/l)
-* Toggle hidden files with `Ctrl+.`
 * Back/forward navigation history
 
 ## Installation
@@ -84,7 +78,6 @@ Running `sc` opens sicth, and quitting will `cd` your shell to the last browsed 
 
 | Key | Action |
 |-----|--------|
-| **Navigation** | |
 | `Down` / `Ctrl+j` | Move selection down |
 | `Up` / `Ctrl+k` | Move selection up |
 | `Ctrl+d` | Half-page down |
@@ -95,16 +88,12 @@ Running `sc` opens sicth, and quitting will `cd` your shell to the last browsed 
 | `Ctrl+q` | Navigate back in history |
 | `Ctrl+e` | Navigate forward in history |
 | `Ctrl+.` | Toggle hidden files |
-| **Shell** | |
 | `!command` | Quit and run command in the current directory (needs sc wrapper) |
-| **Actions** | |
 | `Esc` | Clear search / Quit (when query empty) |
 | `Ctrl+c` | Quit without writing out-file |
-| **Typing** | |
 | `!` (prefix) | Prefix search to enter command mode |
 | `[text]` | Filter entries by name |
 | `Backspace` | Delete last char of query, or go to parent directory (if empty) |
-| **Mouse** | |
 | `Scroll` | Move selection |
 | `Left Click` | Select entry |
 | `Double Click`| Enter directory / Open file |
