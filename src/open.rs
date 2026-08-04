@@ -107,7 +107,8 @@ mod tests {
     fn script_dir_only_is_cd_line() {
         use std::io::Read;
         let dir = std::env::temp_dir();
-        let out = Some(dir.join(format!("sicth_open_test_{}", std::process::id())));
+        let c = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let out = Some(dir.join(format!("sicth_open_test_{}_{}", std::process::id(), c)));
         write_out_script(&out, Path::new("/tmp/xyz"), None);
         let content = fs::read_to_string(out.as_ref().unwrap()).unwrap();
         assert_eq!(content, "cd '/tmp/xyz'\n");
@@ -117,7 +118,8 @@ mod tests {
     #[test]
     fn script_with_command_appends_verbatim() {
         let dir = std::env::temp_dir();
-        let out = Some(dir.join(format!("sicth_open_test_{}", std::process::id())));
+        let c = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let out = Some(dir.join(format!("sicth_open_test_{}_{}", std::process::id(), c)));
         write_out_script(&out, Path::new("/tmp/xyz"), Some("touch a b"));
         let content = fs::read_to_string(out.as_ref().unwrap()).unwrap();
         assert!(content.contains("touch a b"));

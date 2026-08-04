@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use nucleo::{Config, Nucleo};
 use nucleo_matcher::pattern::{CaseMatching, Normalization};
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+use ratatui::crossterm::event::{
+    KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
 use ratatui::layout::Rect;
 
 use crate::model::{self, Entry};
@@ -167,7 +169,12 @@ impl App {
     pub fn visible(&self, max: u32) -> Vec<&Entry> {
         let off = self.scroll_offset;
         match self.mode {
-            Mode::Browse => self.browse_entries.iter().skip(off).take(max as usize).collect(),
+            Mode::Browse => self
+                .browse_entries
+                .iter()
+                .skip(off)
+                .take(max as usize)
+                .collect(),
             Mode::Command => Vec::new(),
             Mode::Search => {
                 let snap = self.nucleo.snapshot();
@@ -360,7 +367,11 @@ impl App {
                 self.toggle_hidden();
                 Cmd::None
             }
-            KeyCode::Char(c) if !k.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => {
+            KeyCode::Char(c)
+                if !k
+                    .modifiers
+                    .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+            {
                 let mut new = self.query.clone();
                 new.push(c);
                 let old = self.query.clone();
@@ -373,7 +384,7 @@ impl App {
 
     pub fn on_mouse(&mut self, m: MouseEvent, area: Rect) -> Cmd {
         let list_rows = area.height.saturating_sub(1) as usize; // query bar at top row
-        // Query bar row (buttons): row == area.y
+                                                                // Query bar row (buttons): row == area.y
         if m.row == area.y {
             if matches!(m.kind, MouseEventKind::Down(MouseButton::Left)) {
                 if m.column == area.x && !self.nav_back.is_empty() {
@@ -451,7 +462,6 @@ impl App {
             }
         }
     }
-
 }
 
 #[cfg(test)]
@@ -466,8 +476,8 @@ mod tests {
 
     fn fixture_dir(entries: usize) -> PathBuf {
         let id = COUNTER.fetch_add(1, Ordering::SeqCst);
-        let dir = std::env::temp_dir()
-            .join(format!("sicth_app_test_{}_{}", std::process::id(), id));
+        let dir =
+            std::env::temp_dir().join(format!("sicth_app_test_{}_{}", std::process::id(), id));
         fs::create_dir_all(&dir).unwrap();
         for i in 0..entries {
             if i % 3 == 0 {
@@ -622,5 +632,4 @@ mod tests {
         assert_eq!(app.nav_back.len(), 1);
         assert!(app.nav_forward.is_empty());
     }
-
 }

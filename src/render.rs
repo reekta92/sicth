@@ -19,9 +19,34 @@ fn glyph(e: &Entry) -> (char, Color) {
         // Code
         if matches!(
             ext,
-            "rs" | "c" | "h" | "cpp" | "hpp" | "cc" | "py" | "js" | "ts" | "jsx" | "tsx"
-                | "mjs" | "go" | "java" | "kt" | "rb" | "sh" | "bash" | "zsh" | "fish"
-                | "lua" | "pl" | "hs" | "ml" | "clj" | "cljs" | "zig" | "v" | "swift"
+            "rs" | "c"
+                | "h"
+                | "cpp"
+                | "hpp"
+                | "cc"
+                | "py"
+                | "js"
+                | "ts"
+                | "jsx"
+                | "tsx"
+                | "mjs"
+                | "go"
+                | "java"
+                | "kt"
+                | "rb"
+                | "sh"
+                | "bash"
+                | "zsh"
+                | "fish"
+                | "lua"
+                | "pl"
+                | "hs"
+                | "ml"
+                | "clj"
+                | "cljs"
+                | "zig"
+                | "v"
+                | "swift"
         ) {
             return ('\u{f121}', Color::Yellow);
         }
@@ -52,7 +77,10 @@ fn glyph(e: &Entry) -> (char, Color) {
             return ('\u{f1c8}', Color::Magenta);
         }
         // Archives
-        if matches!(ext, "zip" | "tar" | "gz" | "tgz" | "bz2" | "xz" | "7z" | "rar" | "zst") {
+        if matches!(
+            ext,
+            "zip" | "tar" | "gz" | "tgz" | "bz2" | "xz" | "7z" | "rar" | "zst"
+        ) {
             return ('\u{f410}', Color::Red);
         }
         // PDF
@@ -115,13 +143,15 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     }
 
     let items: Vec<Line> = visible.iter().map(|e| entry_line(e)).collect();
-    let list = List::new(items)
-        .highlight_style(Style::default().bg(Color::DarkGray));
+    let list = List::new(items).highlight_style(Style::default().bg(Color::DarkGray));
 
     if app.mode == crate::app::Mode::Command {
         let hint = Line::from(vec![
             Span::styled("run in ", Style::default().fg(Color::DarkGray)),
-            Span::styled(app.cwd.display().to_string(), Style::default().fg(Color::Yellow)),
+            Span::styled(
+                app.cwd.display().to_string(),
+                Style::default().fg(Color::Yellow),
+            ),
         ]);
         f.render_widget(hint, list_area);
     } else {
@@ -136,17 +166,32 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     let back_styled = if app.nav_back.is_empty() {
         Span::styled("\u{2190}", Style::default().fg(Color::DarkGray))
     } else {
-        Span::styled("\u{2190}", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        Span::styled(
+            "\u{2190}",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
     };
     let fwd_styled = if app.nav_forward.is_empty() {
         Span::styled("\u{2192}", Style::default().fg(Color::DarkGray))
     } else {
-        Span::styled("\u{2192}", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        Span::styled(
+            "\u{2192}",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
     };
     let up_styled = if at_root {
         Span::styled("\u{2191}", Style::default().fg(Color::DarkGray))
     } else {
-        Span::styled("\u{2191}", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        Span::styled(
+            "\u{2191}",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
     };
 
     let query_spans: Vec<Span> = if app.query.is_empty() {
@@ -158,9 +203,26 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         } else {
             cwd_str
         };
-        vec![back_styled, fwd_styled, up_styled, Span::raw(" "), Span::styled(display, Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC))]
+        vec![
+            back_styled,
+            fwd_styled,
+            up_styled,
+            Span::raw(" "),
+            Span::styled(
+                display,
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            ),
+        ]
     } else {
-        vec![back_styled, fwd_styled, up_styled, Span::raw(" "), Span::raw(&app.query)]
+        vec![
+            back_styled,
+            fwd_styled,
+            up_styled,
+            Span::raw(" "),
+            Span::raw(&app.query),
+        ]
     };
     let query_line = Line::from(query_spans);
     f.render_widget(query_line, query_area);

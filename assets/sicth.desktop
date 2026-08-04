@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=sicth
+Comment=Minimal TUI file navigator with fuzzy search
+Exec=sicth
+Icon=sicth
+Categories=ConsoleOnly;Utility;FileManager;System;
+Terminal=true

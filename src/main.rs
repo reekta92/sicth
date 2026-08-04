@@ -149,10 +149,7 @@ fn main() {
             match how {
                 open::How::Editor => {
                     let (prog, args) = open::resolve_editor();
-                    let status = process::Command::new(&prog)
-                        .args(&args)
-                        .arg(&path)
-                        .status();
+                    let status = process::Command::new(&prog).args(&args).arg(&path).status();
                     match status {
                         Ok(s) if s.success() => process::exit(0),
                         Ok(s) => process::exit(s.code().unwrap_or(1)),
@@ -230,7 +227,10 @@ mod tests {
 
         // Cmd::OpenFile propagates through
         let p = PathBuf::from("/tmp/test.txt");
-        assert_eq!(dispatch(&mut app, Cmd::OpenFile(p.clone())), Some(Cmd::OpenFile(p)));
+        assert_eq!(
+            dispatch(&mut app, Cmd::OpenFile(p.clone())),
+            Some(Cmd::OpenFile(p))
+        );
 
         // Cmd::ParentDir is consumed, cwd moves up
         let mut app2 = App::new(sub);
@@ -238,14 +238,14 @@ mod tests {
         assert!(dispatch(&mut app2, Cmd::ParentDir).is_none());
         assert_eq!(app2.cwd, parent);
 
-    #[test]
-    fn dispatch_propagates_run_command() {
-        let dir = fixture_dir("run_cmd");
-        let mut app = App::new(dir);
-        assert_eq!(
-            dispatch(&mut app, Cmd::RunCommand("ls".into())),
-            Some(Cmd::RunCommand("ls".into()))
-        );
-    }
+        #[test]
+        fn dispatch_propagates_run_command() {
+            let dir = fixture_dir("run_cmd");
+            let mut app = App::new(dir);
+            assert_eq!(
+                dispatch(&mut app, Cmd::RunCommand("ls".into())),
+                Some(Cmd::RunCommand("ls".into()))
+            );
+        }
     }
 }

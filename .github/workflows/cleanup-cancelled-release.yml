@@ -1,0 +1,57 @@
+name: Cleanup Cancelled Release
+
+on:
+  workflow_run:
+    workflows: ["Dispatch Release"]
+    types:
+      - completed
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: github.event.workflow_run.conclusion == 'cancelled'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download release metadata
+        uses: dawidd6/action-download-artifact@v3
+        with:
+          run_id: ${{ github.event.workflow_run.id }}
+          name: release-metadata
+          path: .
+          workflow_search: false
+        continue-on-error: true
+      - name: Revert and Clean
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ ! -f release-metadata.json ]; then
+            echo "No metadata found, nothing to clean."
+            exit 0
+          fi
+          TAG=$(jq -r '.tag' release-metadata.json)
+          BRANCH=$(jq -r '.target_branch' release-metadata.json)
+          OVERWRITE=$(jq -r '.overwrite' release-metadata.json)
+          
+          # Delete draft release and tag
+          gh release delete "$TAG" --cleanup-tag -y || true
+          
+          if [ "$OVERWRITE" != "true" ]; then
+            git push origin --delete "$TAG" || true
+            
+            git clone "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" repo
+            cd repo
+            git checkout "$BRANCH"
+            
+            LAST_COMMIT_MSG=$(git log -1 --pretty=%B)
+            if echo "$LAST_COMMIT_MSG" | grep -q "^release: update versions to v"; then
+              git revert --no-commit HEAD
+              git commit -m "chore: revert aborted release $TAG [skip ci]"
+              git push origin "$BRANCH"
+            elif echo "$LAST_COMMIT_MSG" | grep -q "^release: v"; then
+              git revert --no-commit HEAD
+              git commit -m "chore: revert aborted release $TAG [skip ci]"
+              git push origin "$BRANCH"
+            fi
+          fi

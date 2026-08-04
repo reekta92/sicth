@@ -1,0 +1,543 @@
+name: Dispatch Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump type"
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+        default: patch
+      target_branch:
+        description: "The branch to base the release on"
+        required: false
+        type: string
+        default: main
+      prerelease:
+        description: "Mark this release as a pre-release"
+        required: false
+        type: boolean
+        default: false
+      prerelease_identifier:
+        description: "Pre-release identifier (e.g., rc, beta, alpha)"
+        required: false
+        type: string
+        default: rc
+      override_version:
+        description: "Manually override the version number (e.g., 1.2.3-rc.0). If set, 'bump' is ignored."
+        required: false
+        type: string
+      overwrite_release:
+        description: "Overwrite an existing release at the current version (force-move tag, rebuild assets, flip prerelease flag). 'bump' is ignored."
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  calculate_version:
+    name: Calculate Release Version
+    runs-on: ubuntu-latest
+    outputs:
+      new_version: ${{ steps.calculate.outputs.new_version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.target_branch }}
+      - name: Calculate next version
+        id: calculate
+        run: |
+          OVERRIDE_VERSION="${{ inputs.override_version }}"
+          if [ -n "$OVERRIDE_VERSION" ]; then
+            NEW="$OVERRIDE_VERSION"
+          else
+            CURRENT=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
+            BUMP_TYPE="${{ inputs.bump }}"
+            PRERELEASE="${{ inputs.prerelease }}"
+            PRE_ID="${{ inputs.prerelease_identifier }}"
+
+            CURRENT_BASE=$(echo "$CURRENT" | cut -d'-' -f1)
+            CURRENT_PRE=$(echo "$CURRENT" | sed -n 's/^[0-9.]\+-\([^.]\+\).\([0-9]\+\)/\1/p')
+            CURRENT_PRE_NUM=$(echo "$CURRENT" | sed -n 's/^[0-9.]\+-\([^.]\+\).\([0-9]\+\)/\2/p')
+
+            IS_CURRENTLY_PRERELEASE=false
+            if [ -n "$CURRENT_PRE" ]; then
+              IS_CURRENTLY_PRERELEASE=true
+            fi
+
+            IFS='.' read -r MAJ MIN PAT <<< "$CURRENT_BASE"
+            case "$BUMP_TYPE" in
+              patch) NEXT_BASE="$MAJ.$MIN.$((PAT+1))";;
+              minor) NEXT_BASE="$MAJ.$((MIN+1)).0";;
+              major) NEXT_BASE="$((MAJ+1)).0.0";;
+            esac
+
+            OVERWRITE="${{ inputs.overwrite_release }}"
+            if [ "$OVERWRITE" = "true" ]; then
+              NEW="$CURRENT_BASE"
+            elif [ "$PRERELEASE" = "true" ]; then
+              if [ -z "$PRE_ID" ]; then
+                NEW="$CURRENT_BASE"
+              elif [ "$IS_CURRENTLY_PRERELEASE" = "true" ] && [ "$CURRENT_PRE" = "$PRE_ID" ]; then
+                NEW="$CURRENT_BASE-$PRE_ID.$((CURRENT_PRE_NUM+1))"
+              else
+                NEW="$CURRENT_BASE-$PRE_ID.0"
+              fi
+            else
+              if [ "$IS_CURRENTLY_PRERELEASE" = "true" ]; then
+                NEW="$CURRENT_BASE"
+              else
+                NEW="$NEXT_BASE"
+              fi
+            fi
+          fi
+          echo "new_version=$NEW" >> "$GITHUB_OUTPUT"
+      - name: Save release metadata for cleanup
+        run: |
+          OLD_VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
+          NEW_VERSION="${{ steps.calculate.outputs.new_version }}"
+          jq -n \
+            --arg old "$OLD_VERSION" \
+            --arg new "$NEW_VERSION" \
+            --arg tag "v$NEW_VERSION" \
+            --arg branch "${{ inputs.target_branch }}" \
+            --arg overwrite "${{ inputs.overwrite_release }}" \
+            '{old_version: $old, new_version: $new, tag: $tag, target_branch: $branch, overwrite: $overwrite}' \
+            > release-metadata.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-metadata
+          path: release-metadata.json
+          retention-days: 3
+
+  approval:
+    name: Approve Release
+    needs: calculate_version
+    runs-on: ubuntu-latest
+    environment:
+      name: release-approval
+      url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Waiting for approval
+        run: |
+          echo "Version to be released: ${{ needs.calculate_version.outputs.new_version }}"
+
+  prepare:
+    needs: [calculate_version, approval]
+    runs-on: ubuntu-latest
+    outputs:
+      new_version: ${{ needs.calculate_version.outputs.new_version }}
+      tag: v${{ needs.calculate_version.outputs.new_version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ inputs.target_branch }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install tools
+        run: |
+          cargo install cargo-edit --locked
+          cargo install git-cliff --locked
+      - name: Set version
+        id: bump
+        run: |
+          NEW="${{ needs.calculate_version.outputs.new_version }}"
+          cargo set-version "$NEW"
+          if [ -f flake.nix ]; then
+            sed -i "s/version = \".*\"; # auto-updated/version = \"$NEW\"; # auto-updated/" flake.nix
+          fi
+          cargo generate-lockfile
+          echo "new_version=$NEW" >> "$GITHUB_OUTPUT"
+      - name: Generate changelog
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0)
+          git cliff --tag "v${{ steps.bump.outputs.new_version }}" -o CHANGELOG.md
+          git cliff "${PREV_TAG}..HEAD" --tag "v${{ steps.bump.outputs.new_version }}" -o RELEASE_NOTES.md
+      - name: Commit, tag, push
+        run: |
+          TAG="v${{ steps.bump.outputs.new_version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml Cargo.lock CHANGELOG.md flake.nix
+          if ! git diff --staged --quiet; then
+            git commit -m "release: $TAG"
+          fi
+          git push --force-with-lease origin HEAD:${{ inputs.target_branch }}
+          if [ "${{ inputs.overwrite_release }}" = "true" ]; then
+            git tag -f "$TAG"
+            git push origin "$TAG" --force
+          else
+            git tag "$TAG"
+            git push origin "$TAG"
+          fi
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: "v${{ steps.bump.outputs.new_version }}"
+          PRERELEASE: "${{ inputs.prerelease }}"
+        run: |
+          if [ "$PRERELEASE" = "true" ]; then PRE_FLAG="--prerelease"; else PRE_FLAG="--prerelease=false"; fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --notes-file RELEASE_NOTES.md --title "$TAG" $PRE_FLAG
+          else
+            gh release create "$TAG" --title "$TAG" --notes-file RELEASE_NOTES.md --draft $PRE_FLAG
+          fi
+
+  linux-x86_64:
+    needs: prepare
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: "v${{ needs.prepare.outputs.new_version }}"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release --locked
+      - name: Smoke test
+        run: ./target/release/sicth --help
+      - name: Package
+        run: |
+          mkdir -p dist
+          cp target/release/sicth .
+          tar -cJf "dist/sicth-x86_64-unknown-linux-gnu.tar.xz" sicth LICENSE README.md
+          tar -czf "dist/sicth-x86_64-unknown-linux-gnu.tar.gz" sicth LICENSE README.md
+      - name: Upload
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: "v${{ needs.prepare.outputs.new_version }}"
+        run: gh release upload "$TAG" dist/* --clobber
+
+  linux-aarch64:
+    needs: prepare
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: "v${{ needs.prepare.outputs.new_version }}"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cross deps
+        run: |
+          sudo dpkg --add-architecture arm64
+          sudo find /etc/apt/ -name '*.list' -exec sed -i '/^deb /{/\[arch=/!s/^deb /deb [arch=amd64] /}' {} +
+          sudo find /etc/apt/ -name '*.sources' -exec sh -c 'grep -q "^Architectures:" "$1" 2>/dev/null || sed -i "/^Types: deb/a Architectures: amd64" "$1"' _ {} \;
+          printf '%s\n' \
+            'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ jammy main restricted universe multiverse' \
+            'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ jammy-updates main restricted universe multiverse' \
+            'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ jammy-security main restricted universe multiverse' \
+            | sudo tee /etc/apt/sources.list.d/arm64.list > /dev/null
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+        env:
+          DEBIAN_FRONTEND: noninteractive
+      - name: Build
+        run: cargo build --release --locked --target aarch64-unknown-linux-gnu
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+      - name: Package
+        run: |
+          mkdir -p dist
+          cp target/aarch64-unknown-linux-gnu/release/sicth .
+          tar -cJf "dist/sicth-aarch64-unknown-linux-gnu.tar.xz" sicth LICENSE README.md
+          tar -czf "dist/sicth-aarch64-unknown-linux-gnu.tar.gz" sicth LICENSE README.md
+      - name: Upload
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: "v${{ needs.prepare.outputs.new_version }}"
+        run: gh release upload "$TAG" dist/* --clobber
+
+  windows-x86_64:
+    needs: prepare
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: "v${{ needs.prepare.outputs.new_version }}"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release --locked
+      - name: Smoke test
+        run: ./target/release/sicth.exe --help
+      - name: Package
+        run: |
+          mkdir dist
+          copy target\release\sicth.exe .
+          7z a dist\sicth-x86_64-pc-windows-msvc.zip sicth.exe LICENSE README.md
+      - name: Upload
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: "v${{ needs.prepare.outputs.new_version }}"
+        run: gh release upload "$TAG" dist/* --clobber
+
+  macos-arm:
+    needs: prepare
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: "v${{ needs.prepare.outputs.new_version }}"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release --locked --target aarch64-apple-darwin
+      - name: Install create-dmg
+        run: brew install create-dmg
+      - name: Package
+        run: |
+          mkdir -p dist
+          cp target/aarch64-apple-darwin/release/sicth .
+          tar -cJf "dist/sicth-aarch64-apple-darwin.tar.xz" sicth LICENSE README.md
+          tar -czf "dist/sicth-aarch64-apple-darwin.tar.gz" sicth LICENSE README.md
+          
+          mkdir -p dmg_tmp
+          cp sicth dmg_tmp/
+          create-dmg \
+            --volname "sicth" \
+            --window-pos 200 120 \
+            --window-size 400 300 \
+            --hide-extension "sicth" \
+            "dist/sicth-aarch64-apple-darwin.dmg" \
+            "dmg_tmp/"
+      - name: Upload
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: "v${{ needs.prepare.outputs.new_version }}"
+        run: gh release upload "$TAG" dist/* --clobber
+
+  linux-packages:
+    needs: prepare
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: "v${{ needs.prepare.outputs.new_version }}"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build release
+        run: cargo build --release --locked
+      - name: Install packagers
+        run: cargo install cargo-deb cargo-generate-rpm --locked
+      - name: Generate packages
+        run: |
+          mkdir -p dist
+          cargo deb --no-build -o dist/
+          cargo generate-rpm -o dist/
+      - name: Upload
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: "v${{ needs.prepare.outputs.new_version }}"
+        run: gh release upload "$TAG" dist/* --clobber
+
+  linux-packages-aarch64:
+    needs: prepare
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: "v${{ needs.prepare.outputs.new_version }}"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cross deps
+        run: |
+          sudo dpkg --add-architecture arm64
+          sudo find /etc/apt/ -name '*.list' -exec sed -i '/^deb /{/\[arch=/!s/^deb /deb [arch=amd64] /}' {} +
+          sudo find /etc/apt/ -name '*.sources' -exec sh -c 'grep -q "^Architectures:" "$1" 2>/dev/null || sed -i "/^Types: deb/a Architectures: amd64" "$1"' _ {} \;
+          printf '%s\n' \
+            'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ jammy main restricted universe multiverse' \
+            'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ jammy-updates main restricted universe multiverse' \
+            'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ jammy-security main restricted universe multiverse' \
+            | sudo tee /etc/apt/sources.list.d/arm64.list > /dev/null
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+      - name: Build release
+        run: cargo build --release --locked --target aarch64-unknown-linux-gnu
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+      - name: Install packagers
+        run: cargo install cargo-deb cargo-generate-rpm --locked
+      - name: Generate packages
+        run: |
+          mkdir -p dist
+          cargo deb --target aarch64-unknown-linux-gnu --no-build -o dist/
+          cargo generate-rpm --target aarch64-unknown-linux-gnu -o dist/
+      - name: Upload
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: "v${{ needs.prepare.outputs.new_version }}"
+        run: gh release upload "$TAG" dist/* --clobber
+
+  appimage:
+    needs: prepare
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: "v${{ needs.prepare.outputs.new_version }}"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install fuse
+        run: sudo apt-get update && sudo apt-get install -y libfuse2
+      - name: Build release
+        run: cargo build --release --locked
+      - name: Build AppImage
+        env:
+          VERSION: ${{ needs.prepare.outputs.new_version }}
+        run: |
+          mkdir -p dist
+          wget -c "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage"
+          chmod +x linuxdeploy-x86_64.AppImage
+          
+          mkdir -p AppDir/usr/bin AppDir/usr/share/applications AppDir/usr/share/icons/hicolor/48x48/apps
+          cp target/release/sicth AppDir/usr/bin/
+          cp assets/sicth.desktop AppDir/usr/share/applications/
+          cp assets/sicth.png AppDir/usr/share/icons/hicolor/48x48/apps/
+          
+          ./linuxdeploy-x86_64.AppImage --appdir AppDir -d assets/sicth.desktop -i assets/sicth.png --output appimage
+          mv sicth*.AppImage dist/
+      - name: Upload
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: "v${{ needs.prepare.outputs.new_version }}"
+        run: gh release upload "$TAG" dist/* --clobber
+
+  nix:
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: "v${{ needs.prepare.outputs.new_version }}"
+      - uses: cachix/install-nix-action@v31
+      - name: Build Nix package
+        run: nix build .#default
+      - name: Package
+        run: |
+          mkdir -p dist
+          cp result/bin/sicth dist/sicth-nix-binary
+      - name: Upload
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: "v${{ needs.prepare.outputs.new_version }}"
+        run: gh release upload "$TAG" dist/* --clobber
+
+  crates-io:
+    needs: prepare
+    runs-on: ubuntu-latest
+    if: inputs.overwrite_release == false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: "v${{ needs.prepare.outputs.new_version }}"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Check Token
+        id: check-token
+        run: |
+          if [ -n "${{ secrets.CARGO_REGISTRY_TOKEN }}" ]; then
+            echo "has_token=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_token=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Publish
+        if: steps.check-token.outputs.has_token == 'true'
+        run: cargo publish --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  post-release:
+    needs: [prepare, linux-x86_64, linux-aarch64, windows-x86_64, macos-arm, linux-packages, linux-packages-aarch64, appimage, nix]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target_branch }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Update README & PKGBUILD
+        run: |
+          NEW_VERSION="${{ needs.prepare.outputs.new_version }}"
+          
+          # Wait for release to have assets populated
+          sleep 10
+          
+          # Extract sha256 of the linux-x86_64 tarball for PKGBUILD
+          gh release download "v$NEW_VERSION" -p 'sicth-x86_64-unknown-linux-gnu.tar.xz'
+          SHA=$(sha256sum sicth-x86_64-unknown-linux-gnu.tar.xz | awk '{print $1}')
+          rm sicth-x86_64-unknown-linux-gnu.tar.xz
+          
+          # Update PKGBUILD
+          sed -i "s/^pkgver=.*/pkgver=$NEW_VERSION/" PKGBUILD
+          sed -i "s/^sha256sums=.*/sha256sums=(\"$SHA\")/" PKGBUILD
+          
+          # Update README
+          # Using regex to update version components of asset names
+          sed -i -E "s/sicth_[0-9]+.[0-9]+.[0-9]+(-[a-z0-9.]+)?_amd64.deb/sicth_${NEW_VERSION}_amd64.deb/g" README.md
+          sed -i -E "s/sicth_[0-9]+.[0-9]+.[0-9]+(-[a-z0-9.]+)?_arm64.deb/sicth_${NEW_VERSION}_arm64.deb/g" README.md
+          sed -i -E "s/sicth-[0-9]+.[0-9]+.[0-9]+(-[a-z0-9.]+)?-[0-9]+.x86_64.rpm/sicth-${NEW_VERSION}-1.x86_64.rpm/g" README.md
+          sed -i -E "s/sicth-[0-9]+.[0-9]+.[0-9]+(-[a-z0-9.]+)?-[0-9]+.aarch64.rpm/sicth-${NEW_VERSION}-1.aarch64.rpm/g" README.md
+          sed -i -E "s/sicth-[0-9]+.[0-9]+.[0-9]+(-[a-z0-9.]+)?-x86_64.AppImage/sicth-${NEW_VERSION}-x86_64.AppImage/g" README.md
+          
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add README.md PKGBUILD
+          if ! git diff --staged --quiet; then
+            git commit -m "chore(release): update versions and hashes for v$NEW_VERSION [skip ci]"
+            git push origin HEAD:${{ inputs.target_branch }}
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish Release
+        run: gh release edit "v${{ needs.prepare.outputs.new_version }}" --draft=false
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  cleanup-on-failure:
+    needs: [prepare, linux-x86_64, linux-aarch64, windows-x86_64, macos-arm, linux-packages, linux-packages-aarch64, appimage, nix, crates-io, post-release]
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download release metadata
+        uses: actions/download-artifact@v4
+        with:
+          name: release-metadata
+          path: .
+      - name: Cleanup
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ ! -f release-metadata.json ]; then
+            echo "No metadata found, nothing to clean."
+            exit 0
+          fi
+          TAG=$(jq -r '.tag' release-metadata.json)
+          OVERWRITE=$(jq -r '.overwrite' release-metadata.json)
+          
+          # Delete release if it was a draft (or if we failed to publish)
+          gh release delete "$TAG" --cleanup-tag -y || true
+          
+          if [ "$OVERWRITE" != "true" ]; then
+            git push origin --delete "$TAG" || true
+          fi

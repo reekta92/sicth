@@ -130,7 +130,11 @@ pub fn run() {
         let yn = prompt_confirm(&format!(
             "Existing sicth integration found in {}. Replace?",
             if is_fish {
-                rc_path.join(&func_name).with_extension("fish").display().to_string()
+                rc_path
+                    .join(&func_name)
+                    .with_extension("fish")
+                    .display()
+                    .to_string()
             } else {
                 rc_path.display().to_string()
             }
@@ -309,12 +313,16 @@ mod tests {
         let original = "echo hello\n";
         let rendered = "# >>> sicth wrapper v2 >>>\nsc() { stuff }\n# <<< sicth wrapper v2 <<<\n";
         let result = replace_marker_block(original, rendered);
-        assert_eq!(result, "echo hello\n# >>> sicth wrapper v2 >>>\nsc() { stuff }\n# <<< sicth wrapper v2 <<<\n");
+        assert_eq!(
+            result,
+            "echo hello\n# >>> sicth wrapper v2 >>>\nsc() { stuff }\n# <<< sicth wrapper v2 <<<\n"
+        );
     }
 
     #[test]
     fn legacy_v1_block_is_replaced() {
-        let original = "echo hello\n# >>> sicth wrapper >>>\nold stuff\n# <<< sicth wrapper <<<\necho bye\n";
+        let original =
+            "echo hello\n# >>> sicth wrapper >>>\nold stuff\n# <<< sicth wrapper <<<\necho bye\n";
         let rendered = "# >>> sicth wrapper v2 >>>\nsc() { stuff }\n# <<< sicth wrapper v2 <<<\n";
         let result = replace_marker_block(original, rendered);
         assert!(result.contains("# >>> sicth wrapper v2 >>>"));
