@@ -408,7 +408,11 @@ impl App {
 
         let row = m.row as usize;
         let y = area.y as usize;
-        let list_start = if self.mode == Mode::Command { y + 2 } else { y + 1 };
+        let list_start = if self.mode == Mode::Command {
+            y + 2
+        } else {
+            y + 1
+        };
         if row < list_start || row >= list_start + list_rows {
             return Cmd::None;
         }
@@ -660,14 +664,20 @@ mod tests {
         // Move selection down in Command mode
         let ev = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
         app.on_key(ev);
-        assert_eq!(app.selected, 1, "Down in Command mode should move selection to 1");
+        assert_eq!(
+            app.selected, 1,
+            "Down in Command mode should move selection to 1"
+        );
 
         // KeyCode::Right in Command mode shouldn't panic
         let ev = KeyEvent::new(KeyCode::Right, KeyModifiers::NONE);
         let cmd = app.on_key(ev);
         match cmd {
             Cmd::EnterDir(_) | Cmd::None => {}
-            _ => panic!("Unexpected command on Right arrow in Command mode: {:?}", cmd),
+            _ => panic!(
+                "Unexpected command on Right arrow in Command mode: {:?}",
+                cmd
+            ),
         }
     }
 }
