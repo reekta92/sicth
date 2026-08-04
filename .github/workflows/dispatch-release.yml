@@ -166,9 +166,13 @@ jobs:
           echo "new_version=$NEW" >> "$GITHUB_OUTPUT"
       - name: Generate changelog
         run: |
-          PREV_TAG=$(git describe --tags --abbrev=0)
+          PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
           git cliff --tag "v${{ steps.bump.outputs.new_version }}" -o CHANGELOG.md
-          git cliff "${PREV_TAG}..HEAD" --tag "v${{ steps.bump.outputs.new_version }}" -o RELEASE_NOTES.md
+          if [ -z "$PREV_TAG" ]; then
+            git cliff --tag "v${{ steps.bump.outputs.new_version }}" -o RELEASE_NOTES.md
+          else
+            git cliff "${PREV_TAG}..HEAD" --tag "v${{ steps.bump.outputs.new_version }}" -o RELEASE_NOTES.md
+          fi
       - name: Commit, tag, push
         run: |
           TAG="v${{ steps.bump.outputs.new_version }}"
