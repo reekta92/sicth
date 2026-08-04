@@ -33,7 +33,7 @@ Available on the [latest GitHub release page](https://github.com/reekta92/sicth/
 | Linux aarch64 | `sicth-aarch64-unknown-linux-gnu.tar.gz` |
 | macOS ARM | `sicth-aarch64-apple-darwin.tar.gz` |
 | Windows x86_64 | `sicth-x86_64-pc-windows-msvc.zip` |
-| AppImage | `sicth-1.0.2-x86_64.AppImage` |
+| AppImage | `sicth-1.0.3-x86_64.AppImage` |
 
 ### Arch Linux (AUR)
 ```sh
@@ -48,12 +48,12 @@ nix profile install github:reekta92/sicth
 
 ### Debian/Ubuntu
 ```sh
-sudo dpkg -i sicth_1.0.2_amd64.deb
+sudo dpkg -i sicth_1.0.3_amd64.deb
 ```
 
 ### Fedora/RHEL
 ```sh
-sudo rpm -i sicth-1.0.2-1.x86_64.rpm
+sudo rpm -i sicth-1.0.3-1.x86_64.rpm
 ```
 
 ### Build from source
