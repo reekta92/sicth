@@ -1,7 +1,6 @@
 # sicth
 
 [![CI](https://github.com/reekta92/sicth/actions/workflows/ci.yml/badge.svg)](https://github.com/reekta92/sicth/actions/workflows/ci.yml)
-[![Crates.io Version](https://img.shields.io/crates/v/sicth)](https://crates.io/crates/sicth)
 [![Crates.io Downloads](https://img.shields.io/crates/d/sicth)](https://crates.io/crates/sicth)
 [![License: GPL-3.0-only](https://img.shields.io/badge/License-GPL_3.0_only-blue.svg)](LICENSE)
 [![AUR Package](https://img.shields.io/aur/version/sicth-bin)](https://aur.archlinux.org/packages/sicth-bin)
