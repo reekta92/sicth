@@ -281,16 +281,19 @@ jobs:
       - name: Build
         run: cargo build --release --locked
       - name: Smoke test
+        shell: bash
         run: ./target/release/sicth.exe --help
       - name: Package
+        shell: bash
         run: |
-          mkdir dist
-          copy target\release\sicth.exe .
-          7z a dist\sicth-x86_64-pc-windows-msvc.zip sicth.exe LICENSE README.md
+          mkdir -p dist
+          cp target/release/sicth.exe .
+          7z a dist/sicth-x86_64-pc-windows-msvc.zip sicth.exe LICENSE README.md
       - name: Upload
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: "v${{ needs.prepare.outputs.new_version }}"
+        shell: bash
         run: gh release upload "$TAG" dist/* --clobber
 
   macos-arm:
