@@ -2,6 +2,11 @@
 
 All notable changes to sicth are documented in this file.
 
+## [1.0.2] - 2026-08-04
+
+### Fixed
+
+- Added shell: bash for the windows release job
 ## [1.0.1] - 2026-08-04
 
 ### Fixed
@@ -11,6 +16,10 @@ All notable changes to sicth are documented in this file.
 ### Miscellaneous
 
 - README.md changes and additions
+
+### Release
+
+- V1.0.1
 ## [1.0.0] - 2026-08-04
 
 ### Added
