@@ -1,4 +1,5 @@
-/target
+tapes/
+target/
 dist/
 *.AppImage
 result
