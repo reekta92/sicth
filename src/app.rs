@@ -169,13 +169,12 @@ impl App {
     pub fn visible(&self, max: u32) -> Vec<&Entry> {
         let off = self.scroll_offset;
         match self.mode {
-            Mode::Browse => self
+            Mode::Browse | Mode::Command => self
                 .browse_entries
                 .iter()
                 .skip(off)
                 .take(max as usize)
                 .collect(),
-            Mode::Command => Vec::new(),
             Mode::Search => {
                 let snap = self.nucleo.snapshot();
                 let total = snap.matched_item_count() as usize;
@@ -188,8 +187,7 @@ impl App {
 
     fn item_count(&self) -> usize {
         match self.mode {
-            Mode::Browse => self.browse_entries.len(),
-            Mode::Command => 0,
+            Mode::Browse | Mode::Command => self.browse_entries.len(),
             Mode::Search => self.nucleo.snapshot().matched_item_count() as usize,
         }
     }
@@ -249,8 +247,7 @@ impl App {
                     return Cmd::None;
                 }
                 let entries = match self.mode {
-                    Mode::Command => unreachable!(),
-                    Mode::Browse => &self.browse_entries,
+                    Mode::Browse | Mode::Command => &self.browse_entries,
                     Mode::Search => {
                         // We need the entry at selected; rebuild
                         let snap = self.nucleo.snapshot();
@@ -294,8 +291,7 @@ impl App {
                     return Cmd::None;
                 }
                 let entries = match self.mode {
-                    Mode::Command => unreachable!(),
-                    Mode::Browse => &self.browse_entries,
+                    Mode::Browse | Mode::Command => &self.browse_entries,
                     Mode::Search => {
                         let snap = self.nucleo.snapshot();
                         return snap
@@ -391,8 +387,12 @@ impl App {
     }
 
     pub fn on_mouse(&mut self, m: MouseEvent, area: Rect) -> Cmd {
-        let list_rows = area.height.saturating_sub(1) as usize; // query bar at top row
-                                                                // Query bar row (buttons): row == area.y
+        let list_rows = if self.mode == Mode::Command {
+            area.height.saturating_sub(2) as usize
+        } else {
+            area.height.saturating_sub(1) as usize
+        };
+        // Query bar row (buttons): row == area.y
         if m.row == area.y {
             if matches!(m.kind, MouseEventKind::Down(MouseButton::Left)) {
                 if m.column == area.x && !self.nav_back.is_empty() {
@@ -408,10 +408,11 @@ impl App {
 
         let row = m.row as usize;
         let y = area.y as usize;
-        if row < y + 1 || row >= y + 1 + list_rows {
+        let list_start = if self.mode == Mode::Command { y + 2 } else { y + 1 };
+        if row < list_start || row >= list_start + list_rows {
             return Cmd::None;
         }
-        let rel = row - y - 1;
+        let rel = row - list_start;
         let idx = self.scroll_offset + rel;
         let count = self.selectable_count();
         if idx >= count {
@@ -639,5 +640,34 @@ mod tests {
         assert_eq!(app.cwd, sub);
         assert_eq!(app.nav_back.len(), 1);
         assert!(app.nav_forward.is_empty());
+    }
+
+    #[test]
+    fn command_mode_shows_list_and_navigates() {
+        let (mut app, _dir) = app_with_entries(5);
+        app.last_area = Rect::new(0, 0, 80, 20);
+
+        // Enter Command mode
+        app.set_query("!".into());
+        assert_eq!(app.mode, Mode::Command);
+
+        // Ensure item count is 5 (like Browse mode)
+        assert_eq!(app.item_count(), 5);
+
+        // Ensure visible items is not empty
+        assert_eq!(app.visible(10).len(), 5);
+
+        // Move selection down in Command mode
+        let ev = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
+        app.on_key(ev);
+        assert_eq!(app.selected, 1, "Down in Command mode should move selection to 1");
+
+        // KeyCode::Right in Command mode shouldn't panic
+        let ev = KeyEvent::new(KeyCode::Right, KeyModifiers::NONE);
+        let cmd = app.on_key(ev);
+        match cmd {
+            Cmd::EnterDir(_) | Cmd::None => {}
+            _ => panic!("Unexpected command on Right arrow in Command mode: {:?}", cmd),
+        }
     }
 }

@@ -133,7 +133,12 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     let list_area = layout[1];
 
     // Compute visible items
-    let visible: Vec<&Entry> = app.visible(list_area.height as u32);
+    let list_height = if app.mode == crate::app::Mode::Command {
+        list_area.height.saturating_sub(1)
+    } else {
+        list_area.height
+    };
+    let visible: Vec<&Entry> = app.visible(list_height as u32);
 
     let mut list_state = ListState::default();
     if !visible.is_empty() {
@@ -147,6 +152,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     let list = List::new(items).highlight_style(Style::default().bg(Color::DarkGray));
 
     if app.mode == crate::app::Mode::Command {
+        let sub = Layout::vertical([Constraint::Length(1), Constraint::Min(1)]).split(list_area);
         let hint = Line::from(vec![
             Span::styled("run in ", Style::default().fg(Color::DarkGray)),
             Span::styled(
@@ -154,7 +160,8 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 Style::default().fg(Color::Yellow),
             ),
         ]);
-        f.render_widget(hint, list_area);
+        f.render_widget(hint, sub[0]);
+        f.render_stateful_widget(list, sub[1], &mut list_state);
     } else {
         f.render_stateful_widget(list, list_area, &mut list_state);
     }
