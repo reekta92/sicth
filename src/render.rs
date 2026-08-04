@@ -94,6 +94,7 @@ fn glyph(e: &Entry) -> (char, Color) {
     }
     // No extension + exec bit check
     if !name.contains('.') {
+        #[cfg(unix)]
         if let Ok(meta) = std::fs::metadata(&e.abs) {
             use std::os::unix::fs::PermissionsExt;
             if meta.permissions().mode() & 0o111 != 0 {
