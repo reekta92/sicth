@@ -2,6 +2,15 @@
 
 All notable changes to sicth are documented in this file.
 
+## [1.0.1] - 2026-08-04
+
+### Fixed
+
+- Fixed hardcoded unix requirement
+
+### Miscellaneous
+
+- README.md changes and additions
 ## [1.0.0] - 2026-08-04
 
 ### Added
@@ -20,4 +29,8 @@ All notable changes to sicth are documented in this file.
 - Repository structure cleanup
 - README.md update
 - Remove abundant files from the repo
+
+### Release
+
+- V1.0.0
 

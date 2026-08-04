@@ -14,7 +14,7 @@
       {
         packages.default = pkgs.rustPlatform.buildRustPackage {
           pname = "sicth";
-          version = "1.0.0"; # auto-updated
+          version = "1.0.1"; # auto-updated
           src = self;
           cargoLock.lockFile = ./Cargo.lock;
           meta = with pkgs.lib; {
