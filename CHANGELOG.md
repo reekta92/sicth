@@ -1,0 +1,23 @@
+# Changelog
+
+All notable changes to sicth are documented in this file.
+
+## [1.0.0] - 2026-08-04
+
+### Added
+
+- Added shortcuts for back/forward
+- Add scrolling list, Ctrl+d/u keys, and nav buttons
+- Add !command shell execution with v2 wrapper protocol
+
+### Fixed
+
+- Made git-cliff generate a empty file when first release
+- Changed show hidden shortcut to 'Ctrl+.'
+
+### Miscellaneous
+
+- Repository structure cleanup
+- README.md update
+- Remove abundant files from the repo
+
