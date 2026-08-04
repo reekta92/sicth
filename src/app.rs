@@ -363,7 +363,7 @@ impl App {
                 Cmd::None
             }
             KeyCode::Char('h') if ctrl => Cmd::ParentDir,
-            KeyCode::Char('.') => {
+            KeyCode::Char('.') if ctrl => {
                 self.toggle_hidden();
                 Cmd::None
             }

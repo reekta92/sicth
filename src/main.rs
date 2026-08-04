@@ -42,7 +42,7 @@ SHELL\n  \
 ACTIONS\n  \
     Esc                 clear query / quit (when query is empty)\n  \
     Ctrl+c              quit without writing out-file\n  \
-    .                   toggle hidden files\n  \
+    Ctrl+.              toggle hidden files\n  \
     Ctrl+l              enter directory or open file (vim mode)\n\n\
 TYPING\n  \
     !                   prefix query with ! to enter command mode\n  \

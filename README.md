@@ -19,7 +19,7 @@ A minimal TUI file navigator with fuzzy search, Nerd Font icons, and shell integ
 * Shell integration — `cd` on exit via `sc` wrapper, `!command` execution
 * `.gitignore`-aware recursive search
 * Vim-style keybinds (Ctrl+j/k/d/u/h/l)
-* Toggle hidden files with `.`
+* Toggle hidden files with `Ctrl+.`
 * Back/forward navigation history
 
 ## Installation
@@ -93,7 +93,7 @@ Running `sc` opens sicth, and quitting will `cd` your shell to the last browsed 
 | `Enter` / `Ctrl+l` | Enter directory / Open file |
 | `Right` | Enter directory (dirs only) |
 | `Left` / `Ctrl+h` | Go to parent directory |
-| `.` | Toggle hidden files |
+| `Ctrl+.` | Toggle hidden files |
 | **Shell** | |
 | `!command` | Quit and run command in the current directory (needs sc wrapper) |
 | **Actions** | |
