@@ -39,8 +39,11 @@ pub struct App {
     pub nucleo: Nucleo<Entry>,
     pub walker: Option<WalkHandle>,
     pub selected: usize,
+    pub scroll_offset: usize,
     pub last_click: Option<(Instant, usize)>,
     pub last_area: Rect,
+    pub nav_back: Vec<PathBuf>,
+    pub nav_forward: Vec<PathBuf>,
 }
 
 fn fresh_nucleo() -> Nucleo<Entry> {
@@ -54,12 +57,16 @@ impl App {
             nucleo: fresh_nucleo(),
             walker: None,
             show_hidden: false,
+
             mode: Mode::Browse,
             selected: 0,
+            scroll_offset: 0,
             last_click: None,
             last_area: Rect::default(),
             query: String::new(),
             cwd,
+            nav_back: Vec::new(),
+            nav_forward: Vec::new(),
         }
     }
 
@@ -114,31 +121,59 @@ impl App {
             );
         }
         self.selected = 0;
+        self.scroll_offset = 0;
     }
 
     pub fn set_dir(&mut self, dir: PathBuf) {
+        self.nav_back.push(self.cwd.clone());
+        self.nav_forward.clear();
+        self.set_dir_raw(dir);
+    }
+
+    fn set_dir_raw(&mut self, dir: PathBuf) {
         self.cwd = dir;
         self.query.clear();
         self.stop_walker();
         self.mode = Mode::Browse;
         self.browse_entries = model::browse(&self.cwd, self.show_hidden);
         self.selected = 0;
+        self.scroll_offset = 0;
+    }
+
+    pub fn reload(&mut self) {
+        self.set_dir_raw(self.cwd.clone());
     }
 
     pub fn toggle_hidden(&mut self) {
         self.show_hidden = !self.show_hidden;
-        self.set_dir(self.cwd.clone());
+        self.reload();
+    }
+
+    pub fn navigate_back(&mut self) {
+        if let Some(dir) = self.nav_back.pop() {
+            self.nav_forward.push(self.cwd.clone());
+            self.set_dir_raw(dir);
+        }
+    }
+
+    pub fn navigate_forward(&mut self) {
+        if let Some(dir) = self.nav_forward.pop() {
+            self.nav_back.push(self.cwd.clone());
+            self.set_dir_raw(dir);
+        }
     }
 
     /// Visible items: Browse → slice; Search → nucleo snapshot.
     pub fn visible(&self, max: u32) -> Vec<&Entry> {
+        let off = self.scroll_offset;
         match self.mode {
-            Mode::Browse => self.browse_entries.iter().take(max as usize).collect(),
+            Mode::Browse => self.browse_entries.iter().skip(off).take(max as usize).collect(),
             Mode::Command => Vec::new(),
             Mode::Search => {
                 let snap = self.nucleo.snapshot();
-                (0..snap.matched_item_count().min(max))
-                    .filter_map(|i| snap.get_matched_item(i).map(|m| m.data))
+                let total = snap.matched_item_count() as usize;
+                (off..total.min(off + max as usize))
+                    .filter_map(|i| snap.get_matched_item(i as u32).map(|m| m.data))
                     .collect()
             }
         }
@@ -152,13 +187,34 @@ impl App {
         }
     }
 
-    /// Entries the popup can actually show and select: min(total matches, list rows).
-    /// last_area is set on every draw; the main loop draws before polling events,
-    /// so it is never the zero-Rect in practice. If height is 0, this yields 0 and
-    /// all selection keys safely no-op.
+    fn list_rows(&self) -> usize {
+        (self.last_area.height as usize).saturating_sub(1)
+    }
+
     fn selectable_count(&self) -> usize {
-        let list_rows = (self.last_area.height as usize).saturating_sub(1);
-        self.item_count().min(list_rows)
+        self.item_count()
+    }
+    pub(crate) fn ensure_selection_visible(&mut self) {
+        let rows = self.list_rows();
+        let count = self.item_count();
+        if count == 0 {
+            self.scroll_offset = 0;
+            return;
+        }
+        if self.selected >= count {
+            self.selected = count - 1;
+        }
+        if self.scroll_offset >= count {
+            self.scroll_offset = count.saturating_sub(1);
+        }
+        if rows == 0 {
+            return;
+        }
+        if self.selected < self.scroll_offset {
+            self.scroll_offset = self.selected;
+        } else if self.selected >= self.scroll_offset + rows {
+            self.scroll_offset = self.selected - rows + 1;
+        }
     }
 
     pub fn on_key(&mut self, k: KeyEvent) -> Cmd {
@@ -285,6 +341,20 @@ impl App {
                 }
                 self.activate_entry(self.selected)
             }
+
+            KeyCode::Char('d') if ctrl => {
+                let half = self.list_rows() / 2;
+                let count = self.selectable_count();
+                if count > 0 && half > 0 {
+                    self.selected = (self.selected + half).min(count - 1);
+                }
+                Cmd::None
+            }
+            KeyCode::Char('u') if ctrl => {
+                let half = self.list_rows() / 2;
+                self.selected = self.selected.saturating_sub(half);
+                Cmd::None
+            }
             KeyCode::Char('h') if ctrl => Cmd::ParentDir,
             KeyCode::Char('.') => {
                 self.toggle_hidden();
@@ -302,11 +372,28 @@ impl App {
     }
 
     pub fn on_mouse(&mut self, m: MouseEvent, area: Rect) -> Cmd {
-        let list_rows = area.height.saturating_sub(1); // query bar at top row
-        if m.row <= area.y || m.row >= area.y + 1 + list_rows {
+        let list_rows = area.height.saturating_sub(1) as usize; // query bar at top row
+        // Query bar row (buttons): row == area.y
+        if m.row == area.y {
+            if matches!(m.kind, MouseEventKind::Down(MouseButton::Left)) {
+                if m.column == area.x && !self.nav_back.is_empty() {
+                    self.navigate_back();
+                } else if m.column == area.x + 1 && !self.nav_forward.is_empty() {
+                    self.navigate_forward();
+                } else if m.column == area.x + 2 && self.cwd.parent().is_some() {
+                    return Cmd::ParentDir;
+                }
+            }
             return Cmd::None;
         }
-        let idx = (m.row - area.y - 1) as usize;
+
+        let row = m.row as usize;
+        let y = area.y as usize;
+        if row < y + 1 || row >= y + 1 + list_rows {
+            return Cmd::None;
+        }
+        let rel = row - y - 1;
+        let idx = self.scroll_offset + rel;
         let count = self.selectable_count();
         if idx >= count {
             return Cmd::None;
@@ -318,7 +405,6 @@ impl App {
                 if let Some((prev, prev_idx)) = self.last_click {
                     if prev_idx == idx && now.duration_since(prev).as_millis() < 300 {
                         self.last_click = None;
-                        // Activate: get the entry at idx
                         return self.activate_entry(idx);
                     }
                 }
@@ -427,16 +513,19 @@ mod tests {
     }
 
     #[test]
-    fn selection_clamped_to_window() {
+    fn selection_scroll_past_viewport() {
         let (mut app, _dir) = app_with_entries(15);
-        app.last_area = Rect::new(0, 0, 80, 5); // 4 list rows (height 5, minus 1 for query)
-        assert_eq!(app.selectable_count(), 4);
+        app.last_area = Rect::new(0, 0, 80, 5); // 4 list rows
+        assert_eq!(app.selectable_count(), 15);
 
         for _ in 0..10 {
             let ev = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
             app.on_key(ev);
         }
-        assert_eq!(app.selected, 3, "selection should be clamped to last visible row");
+        assert_eq!(app.selected, 10, "selection reaches past viewport");
+
+        app.ensure_selection_visible();
+        assert_eq!(app.scroll_offset, 7, "scroll_offset = selected - rows + 1");
     }
 
     #[test]
@@ -493,6 +582,45 @@ mod tests {
         app.set_query("x".into());
         assert_eq!(app.mode, Mode::Search);
         assert!(app.walker.is_some());
+    }
+
+    #[test]
+    fn ctrl_d_u_half_page_jump() {
+        let (mut app, _dir) = app_with_entries(20);
+        app.last_area = Rect::new(0, 0, 80, 11); // 10 list rows, half = 5
+        let ctrl = KeyModifiers::CONTROL;
+        app.on_key(KeyEvent::new(KeyCode::Char('d'), ctrl));
+        assert_eq!(app.selected, 5);
+        app.on_key(KeyEvent::new(KeyCode::Char('d'), ctrl));
+        assert_eq!(app.selected, 10);
+        app.on_key(KeyEvent::new(KeyCode::Char('u'), ctrl));
+        assert_eq!(app.selected, 5);
+    }
+
+    #[test]
+    fn nav_back_forward_buttons() {
+        let (mut app, dir) = app_with_entries(5);
+        app.last_area = Rect::new(0, 0, 80, 20);
+        let sub = dir.join("dir_0");
+        assert!(sub.exists());
+
+        // Enter subdirectory — records history
+        app.set_dir(sub.clone());
+        assert_eq!(app.cwd, sub);
+        assert_eq!(app.nav_back.len(), 1);
+        assert!(app.nav_forward.is_empty());
+
+        // Go back
+        app.navigate_back();
+        assert_eq!(app.cwd, dir);
+        assert!(app.nav_back.is_empty());
+        assert_eq!(app.nav_forward.len(), 1);
+
+        // Go forward
+        app.navigate_forward();
+        assert_eq!(app.cwd, sub);
+        assert_eq!(app.nav_back.len(), 1);
+        assert!(app.nav_forward.is_empty());
     }
 
 }

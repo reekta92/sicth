@@ -32,6 +32,8 @@ fn keybinds() -> &'static str {
     "NAVIGATION\n  \
     Up, Ctrl+k          move selection up\n  \
     Down, Ctrl+j        move selection down\n  \
+    Ctrl+d              half-page down (vim)\n  \
+    Ctrl+u              half-page up (vim)\n  \
     Enter               enter directory or open file\n  \
     Right               enter directory (dirs only)\n  \
     Left, Ctrl+h        go to parent directory\n\n\
@@ -49,7 +51,8 @@ TYPING\n  \
 MOUSE\n  \
     Left click          select entry\n  \
     Double click        enter directory or open file\n  \
-    Scroll              move selection\n"
+    Scroll              move selection\n  \
+    \u{2190} / \u{2192} / \u{2191} buttons  back, forward, parent directory\n"
 }
 
 fn main() {
@@ -194,7 +197,7 @@ fn dispatch(app: &mut App, cmd: Cmd) -> Option<Cmd> {
             None
         }
         Cmd::RebuildList => {
-            app.set_dir(app.cwd.clone());
+            app.reload();
             None
         }
         quit @ (Cmd::QuitCd | Cmd::QuitNoCd | Cmd::OpenFile(_) | Cmd::RunCommand(_)) => Some(quit),
