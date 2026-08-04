@@ -93,6 +93,8 @@ Running `sc` opens sicth, and quitting will `cd` your shell to the last browsed 
 | `Enter` / `Ctrl+l` | Enter directory / Open file |
 | `Right` | Enter directory (dirs only) |
 | `Left` / `Ctrl+h` | Go to parent directory |
+| `Ctrl+q` | Navigate back in history |
+| `Ctrl+e` | Navigate forward in history |
 | `Ctrl+.` | Toggle hidden files |
 | **Shell** | |
 | `!command` | Quit and run command in the current directory (needs sc wrapper) |

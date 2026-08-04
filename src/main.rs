@@ -36,7 +36,9 @@ fn keybinds() -> &'static str {
     Ctrl+u              half-page up (vim)\n  \
     Enter               enter directory or open file\n  \
     Right               enter directory (dirs only)\n  \
-    Left, Ctrl+h        go to parent directory\n\n\
+    Left, Ctrl+h        go to parent directory\n  \
+    Ctrl+q              navigate back in history\n  \
+    Ctrl+e              navigate forward in history\n\n\
 SHELL\n  \
     !command            quit and run command in the current directory (needs sc wrapper)\n\n\
 ACTIONS\n  \

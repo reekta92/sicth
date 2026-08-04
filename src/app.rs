@@ -363,6 +363,14 @@ impl App {
                 Cmd::None
             }
             KeyCode::Char('h') if ctrl => Cmd::ParentDir,
+            KeyCode::Char('q') if ctrl => {
+                self.navigate_back();
+                Cmd::None
+            }
+            KeyCode::Char('e') if ctrl => {
+                self.navigate_forward();
+                Cmd::None
+            }
             KeyCode::Char('.') if ctrl => {
                 self.toggle_hidden();
                 Cmd::None
