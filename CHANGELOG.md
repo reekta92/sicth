@@ -2,11 +2,29 @@
 
 All notable changes to sicth are documented in this file.
 
+## [1.0.3] - 2026-08-04
+
+### Added
+
+- File list no longer disappears when in command prefix
+
+### CI
+
+- Fmt checks passign
+
+### Miscellaneous
+
+- .gitignore additions
+- Update versions and hashes for v1.0.2 [skip ci]
 ## [1.0.2] - 2026-08-04
 
 ### Fixed
 
 - Added shell: bash for the windows release job
+
+### Release
+
+- V1.0.2
 ## [1.0.1] - 2026-08-04
 
 ### Fixed

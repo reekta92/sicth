@@ -867,7 +867,7 @@ dependencies = [
 
 [[package]]
 name = "sicth"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "ignore",
  "infer",
