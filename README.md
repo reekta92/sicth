@@ -7,6 +7,8 @@
 
 `sicth` has a one goal and one goal only, **to navigate through filesystem** interactively and blazingly fast. Can be considered as an alternative to [broot](https://github.com/canop/broot) though **it's as simple as possible and non-disruptive to the terminal window by design**.
 
+<img width="948" height="614" alt="image" src="https://github.com/user-attachments/assets/73890107-2949-4e86-887e-32eb20829d90" />
+
 ## Features
 
 * Fuzzy search powered by `nucleo`
