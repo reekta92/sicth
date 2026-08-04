@@ -35,12 +35,15 @@ fn keybinds() -> &'static str {
     Enter               enter directory or open file\n  \
     Right               enter directory (dirs only)\n  \
     Left, Ctrl+h        go to parent directory\n\n\
+SHELL\n  \
+    !command            quit and run command in the current directory (needs sc wrapper)\n\n\
 ACTIONS\n  \
     Esc                 clear query / quit (when query is empty)\n  \
     Ctrl+c              quit without writing out-file\n  \
     .                   toggle hidden files\n  \
     Ctrl+l              enter directory or open file (vim mode)\n\n\
 TYPING\n  \
+    !                   prefix query with ! to enter command mode\n  \
     a-z, 0-9, ...      filter entries by name\n  \
     Backspace           delete last character of query, or go to parent directory\n\n\
 MOUSE\n  \
@@ -131,14 +134,14 @@ fn main() {
 
     match action {
         Cmd::QuitCd => {
-            open::write_out_file(&out_file, &app.cwd);
+            open::write_out_script(&out_file, &app.cwd, None);
             process::exit(0);
         }
         Cmd::QuitNoCd => {
             process::exit(130);
         }
         Cmd::OpenFile(path) => {
-            open::write_out_file(&out_file, &app.cwd);
+            open::write_out_script(&out_file, &app.cwd, None);
             let how = open::classify(&path);
             match how {
                 open::How::Editor => {
@@ -165,6 +168,14 @@ fn main() {
                 }
             }
         }
+        Cmd::RunCommand(cmd) => {
+            if out_file.is_none() {
+                eprintln!("sicth: !command requires the sc shell function (run: sicth --setup)");
+                process::exit(1);
+            }
+            open::write_out_script(&out_file, &app.cwd, Some(&cmd));
+            process::exit(0);
+        }
         _ => unreachable!("dispatch only yields quit commands"),
     }
 }
@@ -186,7 +197,7 @@ fn dispatch(app: &mut App, cmd: Cmd) -> Option<Cmd> {
             app.set_dir(app.cwd.clone());
             None
         }
-        quit @ (Cmd::QuitCd | Cmd::QuitNoCd | Cmd::OpenFile(_)) => Some(quit),
+        quit @ (Cmd::QuitCd | Cmd::QuitNoCd | Cmd::OpenFile(_) | Cmd::RunCommand(_)) => Some(quit),
     }
 }
 
@@ -223,5 +234,15 @@ mod tests {
         let parent = app2.cwd.parent().unwrap().to_path_buf();
         assert!(dispatch(&mut app2, Cmd::ParentDir).is_none());
         assert_eq!(app2.cwd, parent);
+
+    #[test]
+    fn dispatch_propagates_run_command() {
+        let dir = fixture_dir("run_cmd");
+        let mut app = App::new(dir);
+        assert_eq!(
+            dispatch(&mut app, Cmd::RunCommand("ls".into())),
+            Some(Cmd::RunCommand("ls".into()))
+        );
+    }
     }
 }

@@ -5,23 +5,19 @@ use std::path::{Path, PathBuf};
 use std::process;
 
 const BASH_ZSH_TEMPLATE: &str = "\
-# >>> sicth wrapper >>>
-{NAME}() {{
+# >>> sicth wrapper v2 >>>
+{NAME}() {
     local tmp_file
     tmp_file=\"$(mktemp -t sicth.XXXXXX)\" || return 1
     {BIN} --out-file \"$tmp_file\" \"$@\"
     local ret=$?
     if [[ -s \"$tmp_file\" ]]; then
-        local target_dir
-        target_dir=\"$(cat \"$tmp_file\")\"
-        if [[ -n \"$target_dir\" && \"$target_dir\" != \"$PWD\" && -d \"$target_dir\" ]]; then
-            builtin cd \"$target_dir\"
-        fi
+        . \"$tmp_file\"
     fi
     rm -f \"$tmp_file\"
     return $ret
-}}
-# <<< sicth wrapper <<<
+}
+# <<< sicth wrapper v2 <<<
 ";
 
 const FISH_TEMPLATE: &str = "\
@@ -30,21 +26,34 @@ function {NAME}
     {BIN} --out-file \"$tmp_file\" $argv
     set -l ret $status
     if test -s \"$tmp_file\"
-        set -l target_dir (cat \"$tmp_file\")
-        if test -n \"$target_dir\"; and test \"$target_dir\" != \"$PWD\"; and test -d \"$target_dir\"
-            builtin cd \"$target_dir\"
-        end
+        source \"$tmp_file\"
     end
     rm -f \"$tmp_file\"
     return $ret
 end
 ";
 
-const BASH_ZSH_MARKER_START: &str = "# >>> sicth wrapper >>>";
-const BASH_ZSH_MARKER_END: &str = "# <<< sicth wrapper <<<";
+const MARKER_START: &str = "# >>> sicth wrapper v2 >>>";
+const MARKER_END: &str = "# <<< sicth wrapper v2 <<<";
+const LEGACY_START: &str = "# >>> sicth wrapper >>>";
+const LEGACY_END: &str = "# <<< sicth wrapper <<<";
 
 fn render_template(tmpl: &str, bin: &str, name: &str) -> String {
     tmpl.replace("{BIN}", bin).replace("{NAME}", name)
+}
+
+/// Byte range of the marker block (v2 preferred, legacy v1 accepted) for replace/detection.
+fn find_marker_block(existing: &str) -> Option<(usize, usize)> {
+    for (start_m, end_m) in [(MARKER_START, MARKER_END), (LEGACY_START, LEGACY_END)] {
+        if let Some(start) = existing.find(start_m) {
+            let end = existing[start..]
+                .find(end_m)
+                .map(|i| start + i + end_m.len())
+                .unwrap_or(start);
+            return Some((start, end));
+        }
+    }
+    None
 }
 
 fn read_line() -> String {
@@ -111,7 +120,7 @@ pub fn run() {
         fish_file.exists()
     } else {
         if let Ok(content) = fs::read_to_string(&rc_path) {
-            content.contains(BASH_ZSH_MARKER_START)
+            find_marker_block(&content).is_some()
         } else {
             false
         }
@@ -160,7 +169,7 @@ pub fn run() {
     println!("The following function will be appended:\n");
     println!("{}", rendered);
     println!("Why: a child process cannot change its parent shell's directory.");
-    println!("The wrapper runs sicth, reads the directory it writes on exit, and cds into it.\n");
+    println!("The wrapper runs sicth and sources what it writes on exit: a cd into the last browsed directory, plus any !command you ran.\n");
 
     let yn = prompt_confirm("Proceed?");
     if !yn {
@@ -181,7 +190,7 @@ pub fn run() {
     } else {
         // bash/zsh: either replace marker block or append
         let existing = fs::read_to_string(&rc_path).unwrap_or_default();
-        let new_content = if existing.contains(BASH_ZSH_MARKER_START) {
+        let new_content = if find_marker_block(&existing).is_some() {
             replace_marker_block(&existing, &rendered)
         } else {
             if !existing.is_empty() && !existing.ends_with('\n') {
@@ -257,25 +266,16 @@ fn prompt_name_conflict(name: &str, what: &str) -> NameChoice {
 }
 
 fn replace_marker_block(existing: &str, rendered: &str) -> String {
-    let start = match existing.find(BASH_ZSH_MARKER_START) {
-        Some(i) => i,
-        None => {
-            // Not found — append
-            if !existing.is_empty() && !existing.ends_with('\n') {
-                return format!("{}\n{}", existing, rendered);
-            }
-            return format!("{}{}", existing, rendered);
+    let Some((start, end)) = find_marker_block(existing) else {
+        if !existing.is_empty() && !existing.ends_with('\n') {
+            return format!("{}\n{}", existing, rendered);
         }
-    };
-    let end = match existing[start..].find(BASH_ZSH_MARKER_END) {
-        Some(i) => start + i + BASH_ZSH_MARKER_END.len(),
-        None => start,
+        return format!("{}{}", existing, rendered);
     };
     let mut s = String::with_capacity(existing.len());
     s.push_str(&existing[..start]);
     s.push_str(rendered);
     if end < existing.len() {
-        // Skip trailing newline after end marker if present
         let rest = &existing[end..];
         let rest = rest.strip_prefix('\n').unwrap_or(rest);
         s.push_str(rest);
@@ -292,23 +292,34 @@ mod tests {
         let result = render_template(BASH_ZSH_TEMPLATE, "/usr/bin/sicth", "sc");
         assert!(result.contains("/usr/bin/sicth"));
         assert!(result.contains("sc"));
-        assert!(result.contains("# >>> sicth wrapper >>>"));
-        assert!(result.contains("# <<< sicth wrapper <<<"));
+        assert!(result.contains("# >>> sicth wrapper v2 >>>"));
+        assert!(result.contains("# <<< sicth wrapper v2 <<<"));
     }
 
     #[test]
     fn replace_marker_block_swaps_marked_section() {
-        let original = "echo hello\n# >>> sicth wrapper >>>\nold stuff\n# <<< sicth wrapper <<<\necho bye\n";
-        let rendered = "# >>> sicth wrapper >>>\nsc() { stuff }\n# <<< sicth wrapper <<<\n";
+        let original = "echo hello\n# >>> sicth wrapper v2 >>>\nold stuff\n# <<< sicth wrapper v2 <<<\necho bye\n";
+        let rendered = "# >>> sicth wrapper v2 >>>\nsc() { stuff }\n# <<< sicth wrapper v2 <<<\n";
         let result = replace_marker_block(original, rendered);
-        assert_eq!(result, "echo hello\n# >>> sicth wrapper >>>\nsc() { stuff }\n# <<< sicth wrapper <<<\necho bye\n");
+        assert_eq!(result, "echo hello\n# >>> sicth wrapper v2 >>>\nsc() { stuff }\n# <<< sicth wrapper v2 <<<\necho bye\n");
     }
 
     #[test]
     fn replace_marker_block_no_marker_appends() {
         let original = "echo hello\n";
-        let rendered = "# >>> sicth wrapper >>>\nsc() { stuff }\n# <<< sicth wrapper <<<\n";
+        let rendered = "# >>> sicth wrapper v2 >>>\nsc() { stuff }\n# <<< sicth wrapper v2 <<<\n";
         let result = replace_marker_block(original, rendered);
-        assert_eq!(result, "echo hello\n# >>> sicth wrapper >>>\nsc() { stuff }\n# <<< sicth wrapper <<<\n");
+        assert_eq!(result, "echo hello\n# >>> sicth wrapper v2 >>>\nsc() { stuff }\n# <<< sicth wrapper v2 <<<\n");
+    }
+
+    #[test]
+    fn legacy_v1_block_is_replaced() {
+        let original = "echo hello\n# >>> sicth wrapper >>>\nold stuff\n# <<< sicth wrapper <<<\necho bye\n";
+        let rendered = "# >>> sicth wrapper v2 >>>\nsc() { stuff }\n# <<< sicth wrapper v2 <<<\n";
+        let result = replace_marker_block(original, rendered);
+        assert!(result.contains("# >>> sicth wrapper v2 >>>"));
+        assert!(!result.contains("# >>> sicth wrapper >>>"));
+        assert!(result.contains("# <<< sicth wrapper v2 <<<"));
+        assert!(!result.contains("# <<< sicth wrapper <<<"));
     }
 }

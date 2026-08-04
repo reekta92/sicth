@@ -115,7 +115,15 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     let list = List::new(items)
         .highlight_style(Style::default().bg(Color::DarkGray));
 
-    f.render_stateful_widget(list, list_area, &mut list_state);
+    if app.mode == crate::app::Mode::Command {
+        let hint = Line::from(vec![
+            Span::styled("run in ", Style::default().fg(Color::DarkGray)),
+            Span::styled(app.cwd.display().to_string(), Style::default().fg(Color::Yellow)),
+        ]);
+        f.render_widget(hint, list_area);
+    } else {
+        f.render_stateful_widget(list, list_area, &mut list_state);
+    }
 
     // Query line — ghost text shows cwd when query is empty
     let query_line = if app.query.is_empty() {

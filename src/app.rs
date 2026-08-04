@@ -14,6 +14,7 @@ use crate::walk::{self, WalkHandle};
 pub enum Mode {
     Browse,
     Search,
+    Command,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -26,6 +27,7 @@ pub enum Cmd {
     EnterDir(PathBuf),
     ParentDir,
     RebuildList,
+    RunCommand(String),
 }
 
 pub struct App {
@@ -80,42 +82,26 @@ impl App {
     }
 
     pub fn set_query(&mut self, new: String) {
-        let was_empty = self.query.is_empty();
         self.query = new;
-
-        if self.query.is_empty() {
-            self.stop_walker();
-            self.mode = Mode::Browse;
-            self.browse_entries = model::browse(&self.cwd, self.show_hidden);
-        } else {
-            if was_empty {
-                self.mode = Mode::Search;
-                self.start_walker();
-            }
-            self.nucleo.pattern.reparse(
-                0,
-                &self.query,
-                CaseMatching::Smart,
-                Normalization::Smart,
-                false,
-            );
-        }
-        self.selected = 0;
+        self.after_query_change(false);
     }
 
-    /// Full set_query with append awareness.
     pub fn set_query_append(&mut self, new: String, old: &str) {
-        let was_empty = old.is_empty();
-        let is_empty = new.is_empty();
-        let append = if !is_empty { new.starts_with(old) && new.len() > old.len() } else { false };
+        let append = !new.is_empty() && new.starts_with(old) && new.len() > old.len();
         self.query = new;
+        self.after_query_change(append);
+    }
 
+    fn after_query_change(&mut self, append: bool) {
         if self.query.is_empty() {
             self.stop_walker();
             self.mode = Mode::Browse;
             self.browse_entries = model::browse(&self.cwd, self.show_hidden);
+        } else if self.query.starts_with('!') {
+            self.stop_walker();
+            self.mode = Mode::Command;
         } else {
-            if was_empty {
+            if self.mode != Mode::Search {
                 self.mode = Mode::Search;
                 self.start_walker();
             }
@@ -148,6 +134,7 @@ impl App {
     pub fn visible(&self, max: u32) -> Vec<&Entry> {
         match self.mode {
             Mode::Browse => self.browse_entries.iter().take(max as usize).collect(),
+            Mode::Command => Vec::new(),
             Mode::Search => {
                 let snap = self.nucleo.snapshot();
                 (0..snap.matched_item_count().min(max))
@@ -160,6 +147,7 @@ impl App {
     fn item_count(&self) -> usize {
         match self.mode {
             Mode::Browse => self.browse_entries.len(),
+            Mode::Command => 0,
             Mode::Search => self.nucleo.snapshot().matched_item_count() as usize,
         }
     }
@@ -186,11 +174,19 @@ impl App {
                 }
             }
             KeyCode::Enter => {
+                if self.mode == Mode::Command {
+                    let cmd = self.query[1..].trim();
+                    if cmd.is_empty() {
+                        return Cmd::None;
+                    }
+                    return Cmd::RunCommand(cmd.to_string());
+                }
                 let count = self.selectable_count();
                 if count == 0 || self.selected >= count {
                     return Cmd::None;
                 }
                 let entries = match self.mode {
+                    Mode::Command => unreachable!(),
                     Mode::Browse => &self.browse_entries,
                     Mode::Search => {
                         // We need the entry at selected; rebuild
@@ -235,6 +231,7 @@ impl App {
                     return Cmd::None;
                 }
                 let entries = match self.mode {
+                    Mode::Command => unreachable!(),
                     Mode::Browse => &self.browse_entries,
                     Mode::Search => {
                         let snap = self.nucleo.snapshot();
@@ -346,6 +343,7 @@ impl App {
 
     fn activate_entry(&self, idx: usize) -> Cmd {
         match self.mode {
+            Mode::Command => Cmd::None,
             Mode::Browse => {
                 if idx >= self.browse_entries.len() {
                     return Cmd::None;
@@ -367,6 +365,7 @@ impl App {
             }
         }
     }
+
 }
 
 #[cfg(test)]
@@ -451,4 +450,49 @@ mod tests {
         assert_eq!(app.query, "a");
         assert_eq!(app.mode, Mode::Search);
     }
+
+    #[test]
+    fn bang_enters_command_mode_without_walker() {
+        let (mut app, _dir) = app_with_entries(5);
+        app.last_area = Rect::new(0, 0, 80, 20);
+        let ev = KeyEvent::new(KeyCode::Char('!'), KeyModifiers::NONE);
+        app.on_key(ev);
+        assert_eq!(app.mode, Mode::Command);
+        assert_eq!(app.query, "!");
+        assert!(app.walker.is_none());
+    }
+
+    #[test]
+    fn bare_bang_enter_is_noop() {
+        let (mut app, _dir) = app_with_entries(1);
+        app.last_area = Rect::new(0, 0, 80, 20);
+        app.set_query("!".into());
+        assert_eq!(app.mode, Mode::Command);
+        let ev = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        let cmd = app.on_key(ev);
+        assert_eq!(cmd, Cmd::None);
+        assert_eq!(app.mode, Mode::Command);
+    }
+
+    #[test]
+    fn command_enter_yields_run_command() {
+        let (mut app, _dir) = app_with_entries(1);
+        app.last_area = Rect::new(0, 0, 80, 20);
+        app.set_query("!echo hi".into());
+        let ev = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        let cmd = app.on_key(ev);
+        assert_eq!(cmd, Cmd::RunCommand("echo hi".to_string()));
+    }
+
+    #[test]
+    fn command_to_search_restarts_walker() {
+        let (mut app, _dir) = app_with_entries(5);
+        app.last_area = Rect::new(0, 0, 80, 20);
+        app.set_query("!x".into());
+        assert_eq!(app.mode, Mode::Command);
+        app.set_query("x".into());
+        assert_eq!(app.mode, Mode::Search);
+        assert!(app.walker.is_some());
+    }
+
 }

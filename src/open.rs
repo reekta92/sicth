@@ -48,10 +48,21 @@ pub fn resolve_editor() -> (String, Vec<String>) {
     ("vi".to_string(), Vec::new())
 }
 
-pub fn write_out_file(out: &Option<PathBuf>, dir: &Path) {
-    if let Some(ref path) = out {
-        let _ = fs::write(path, dir.to_string_lossy().as_bytes());
+/// Protocol v2: the out-file is a shell script the wrapper sources.
+/// Always starts with the cd so every quit path lands the shell in the browsed dir;
+/// `command` (a `!command` payload) is appended verbatim for the interactive shell to run.
+pub fn write_out_script(out: &Option<PathBuf>, dir: &Path, command: Option<&str>) {
+    let Some(ref path) = out else { return };
+    let mut content = format!("cd {}\n", shell_quote(&dir.to_string_lossy()));
+    if let Some(cmd) = command {
+        content.push_str(cmd);
+        content.push('\n');
     }
+    let _ = fs::write(path, content.as_bytes());
+}
+
+fn shell_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
 }
 
 #[cfg(test)]
@@ -90,5 +101,32 @@ mod tests {
         let p = tmp_file(b"a\0b");
         assert_eq!(classify(&p), How::System);
         let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn script_dir_only_is_cd_line() {
+        use std::io::Read;
+        let dir = std::env::temp_dir();
+        let out = Some(dir.join(format!("sicth_open_test_{}", std::process::id())));
+        write_out_script(&out, Path::new("/tmp/xyz"), None);
+        let content = fs::read_to_string(out.as_ref().unwrap()).unwrap();
+        assert_eq!(content, "cd '/tmp/xyz'\n");
+        let _ = fs::remove_file(out.as_ref().unwrap());
+    }
+
+    #[test]
+    fn script_with_command_appends_verbatim() {
+        let dir = std::env::temp_dir();
+        let out = Some(dir.join(format!("sicth_open_test_{}", std::process::id())));
+        write_out_script(&out, Path::new("/tmp/xyz"), Some("touch a b"));
+        let content = fs::read_to_string(out.as_ref().unwrap()).unwrap();
+        assert!(content.contains("touch a b"));
+        let _ = fs::remove_file(out.as_ref().unwrap());
+    }
+
+    #[test]
+    fn shell_quote_escapes_single_quotes() {
+        let result = shell_quote("a'b");
+        assert_eq!(result, "'a'\\''b'");
     }
 }
