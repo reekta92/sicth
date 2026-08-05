@@ -106,21 +106,32 @@ fn glyph(e: &Entry) -> (char, Color) {
     ('\u{f016}', Color::White)
 }
 
-fn entry_line(e: &Entry) -> Line<'static> {
-    let (g, fg) = glyph(e);
-    let mut style = Style::default().fg(fg);
-    if e.kind == Kind::Dir {
-        style = style.add_modifier(Modifier::BOLD);
+fn entry_line(e: &Entry, s: &App) -> Line<'static> {
+    let sett = &s.settings;
+    let mut style = Style::default();
+    if sett.colors {
+        let (_g, fg) = glyph(e);
+        style = style.fg(fg);
+        if e.kind == Kind::Dir && sett.bold_dirs {
+            style = style.add_modifier(Modifier::BOLD);
+        }
     }
-    let display_name = if e.kind == Kind::Dir {
+    let mut spans: Vec<Span> = Vec::new();
+    if sett.icons {
+        let (g, fg) = glyph(e);
+        let mut ic = Style::default().fg(fg);
+        if sett.bold_dirs && e.kind == Kind::Dir {
+            ic = ic.add_modifier(Modifier::BOLD);
+        }
+        spans.push(Span::styled(format!("{} ", g), ic));
+    }
+    let display_name = if e.kind == Kind::Dir && sett.slash_dirs {
         format!("{}/", e.rel)
     } else {
         e.rel.clone()
     };
-    Line::from(vec![
-        Span::styled(format!("{} ", g), style),
-        Span::styled(display_name, style),
-    ])
+    spans.push(Span::styled(display_name, style));
+    Line::from(spans)
 }
 
 pub fn draw(f: &mut Frame, app: &mut App) {
@@ -148,8 +159,13 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         }
     }
 
-    let items: Vec<Line> = visible.iter().map(|e| entry_line(e)).collect();
-    let list = List::new(items).highlight_style(Style::default().bg(Color::DarkGray));
+    let items: Vec<Line> = visible.iter().map(|e| entry_line(e, app)).collect();
+    let highlight = if app.settings.colors {
+        Style::default().bg(Color::DarkGray)
+    } else {
+        Style::default().add_modifier(Modifier::REVERSED)
+    };
+    let list = List::new(items).highlight_style(highlight);
 
     if app.mode == crate::app::Mode::Command {
         let sub = Layout::vertical([Constraint::Length(1), Constraint::Min(1)]).split(list_area);
@@ -167,76 +183,95 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     }
 
     // Query line with nav buttons: ← back, → forward, ↑ parent
-    const BTN_W: u16 = 4;
+    let show_btns = app.settings.mouse;
+    let btn_w: u16 = if show_btns { 4 } else { 0 };
 
     let at_root = app.cwd.parent().is_none();
 
-    let back_styled = if app.nav_back.is_empty() {
-        Span::styled("\u{2190}", Style::default().fg(Color::DarkGray))
+    let back_styled = if show_btns {
+        if app.nav_back.is_empty() {
+            Span::styled("\u{2190}", Style::default().fg(Color::DarkGray))
+        } else {
+            Span::styled(
+                "\u{2190}",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )
+        }
     } else {
-        Span::styled(
-            "\u{2190}",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        )
+        Span::raw("")
     };
-    let fwd_styled = if app.nav_forward.is_empty() {
-        Span::styled("\u{2192}", Style::default().fg(Color::DarkGray))
+    let fwd_styled = if show_btns {
+        if app.nav_forward.is_empty() {
+            Span::styled("\u{2192}", Style::default().fg(Color::DarkGray))
+        } else {
+            Span::styled(
+                "\u{2192}",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )
+        }
     } else {
-        Span::styled(
-            "\u{2192}",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        )
+        Span::raw("")
     };
-    let up_styled = if at_root {
-        Span::styled("\u{2191}", Style::default().fg(Color::DarkGray))
+    let up_styled = if show_btns {
+        if at_root {
+            Span::styled("\u{2191}", Style::default().fg(Color::DarkGray))
+        } else {
+            Span::styled(
+                "\u{2191}",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )
+        }
     } else {
-        Span::styled(
-            "\u{2191}",
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        )
+        Span::raw("")
     };
 
     let query_spans: Vec<Span> = if app.query.is_empty() {
         let cwd_str = app.cwd.display().to_string();
-        let max_len = (query_area.width as usize).saturating_sub(BTN_W as usize);
+        let max_len = (query_area.width as usize).saturating_sub(btn_w as usize);
         let display = if cwd_str.chars().count() > max_len && max_len > 0 {
             let truncated: String = cwd_str.chars().take(max_len.saturating_sub(1)).collect();
             format!("{truncated}\u{2026}")
         } else {
             cwd_str
         };
-        vec![
-            back_styled,
-            fwd_styled,
-            up_styled,
-            Span::raw(" "),
-            Span::styled(
+        let mut v = Vec::new();
+        if show_btns {
+            v.push(back_styled);
+            v.push(fwd_styled);
+            v.push(up_styled);
+            v.push(Span::raw(" "));
+        }
+        if app.settings.show_cwd {
+            v.push(Span::styled(
                 display,
                 Style::default()
                     .fg(Color::DarkGray)
                     .add_modifier(Modifier::ITALIC),
-            ),
-        ]
+            ));
+        }
+        v
     } else {
-        vec![
-            back_styled,
-            fwd_styled,
-            up_styled,
-            Span::raw(" "),
-            Span::raw(&app.query),
-        ]
+        let mut v = Vec::new();
+        if show_btns {
+            v.push(back_styled);
+            v.push(fwd_styled);
+            v.push(up_styled);
+            v.push(Span::raw(" "));
+        }
+        v.push(Span::raw(&app.query));
+        v
     };
     let query_line = Line::from(query_spans);
     f.render_widget(query_line, query_area);
 
     f.set_cursor_position((
-        query_area.x + BTN_W + app.query.chars().count() as u16,
+        query_area.x + btn_w + app.query.chars().count() as u16,
         query_area.y,
     ));
 }

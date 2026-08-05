@@ -9,7 +9,8 @@ use ratatui::crossterm::event::{
 };
 use ratatui::layout::Rect;
 
-use crate::model::{self, Entry};
+use crate::model::{self, Entry, Kind};
+use crate::settings::Settings;
 use crate::walk::{self, WalkHandle};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,6 +31,7 @@ pub enum Cmd {
     ParentDir,
     RebuildList,
     RunCommand(String),
+    QuitToDir(PathBuf),
 }
 
 pub struct App {
@@ -44,6 +46,7 @@ pub struct App {
     pub scroll_offset: usize,
     pub last_click: Option<(Instant, usize)>,
     pub last_area: Rect,
+    pub settings: Settings,
     pub nav_back: Vec<PathBuf>,
     pub nav_forward: Vec<PathBuf>,
 }
@@ -53,13 +56,13 @@ fn fresh_nucleo() -> Nucleo<Entry> {
 }
 
 impl App {
-    pub fn new(cwd: PathBuf) -> Self {
-        App {
-            browse_entries: model::browse(&cwd, false),
+    pub fn new(cwd: PathBuf, settings: Settings) -> Self {
+        let mut app = App {
+            browse_entries: Vec::new(),
             nucleo: fresh_nucleo(),
             walker: None,
-            show_hidden: false,
-
+            show_hidden: settings.show_hidden,
+            settings,
             mode: Mode::Browse,
             selected: 0,
             scroll_offset: 0,
@@ -69,6 +72,76 @@ impl App {
             cwd,
             nav_back: Vec::new(),
             nav_forward: Vec::new(),
+        };
+        app.browse_entries = app.reload_entries();
+        app
+    }
+
+    fn reload_entries(&self) -> Vec<Entry> {
+        if self.settings.recursive {
+            model::browse_recursive(
+                &self.cwd,
+                self.show_hidden,
+                self.settings.ignore_gitignore,
+                self.settings.follow_links,
+                self.settings.sort_by,
+                self.settings.dirs_first,
+                self.settings.reverse,
+            )
+        } else {
+            model::browse(
+                &self.cwd,
+                self.show_hidden,
+                self.settings.sort_by,
+                self.settings.dirs_first,
+                self.settings.reverse,
+            )
+        }
+    }
+
+    fn search_text(&self) -> String {
+        if self.settings.exact {
+            self.query
+                .split_whitespace()
+                .map(|tok| {
+                    if tok.starts_with('\'') {
+                        tok.to_string()
+                    } else {
+                        format!("'{tok}")
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+        } else {
+            self.query.clone()
+        }
+    }
+
+    fn case_matching(&self) -> CaseMatching {
+        if self.settings.case_insensitive {
+            CaseMatching::Ignore
+        } else {
+            CaseMatching::Smart
+        }
+    }
+
+    fn resolve_entry(&self, idx: usize, force_quit: bool) -> Cmd {
+        let entry = match self.mode {
+            Mode::Browse | Mode::Command => self.browse_entries.get(idx).cloned(),
+            Mode::Search => self
+                .nucleo
+                .snapshot()
+                .get_matched_item(idx as u32)
+                .map(|m| m.data.clone()),
+        };
+        let Some(e) = entry else {
+            return Cmd::None;
+        };
+        let quit = force_quit || self.settings.quit_on_match;
+        match e.kind {
+            Kind::Dir if quit => Cmd::QuitToDir(e.abs.clone()),
+            Kind::Dir => Cmd::EnterDir(e.abs.clone()),
+            Kind::File => Cmd::OpenFile(e.abs.clone()),
         }
     }
 
@@ -78,7 +151,6 @@ impl App {
         }
         self.walker = None;
     }
-
     fn start_walker(&mut self) {
         self.stop_walker();
         self.nucleo = fresh_nucleo();
@@ -86,6 +158,8 @@ impl App {
         self.walker = Some(walk::spawn_walker(
             self.cwd.clone(),
             self.show_hidden,
+            self.settings.ignore_gitignore,
+            self.settings.follow_links,
             injector,
         ));
     }
@@ -105,7 +179,7 @@ impl App {
         if self.query.is_empty() {
             self.stop_walker();
             self.mode = Mode::Browse;
-            self.browse_entries = model::browse(&self.cwd, self.show_hidden);
+            self.browse_entries = self.reload_entries();
         } else if self.query.starts_with('!') {
             self.stop_walker();
             self.mode = Mode::Command;
@@ -114,10 +188,11 @@ impl App {
                 self.mode = Mode::Search;
                 self.start_walker();
             }
+            let text = self.search_text();
             self.nucleo.pattern.reparse(
                 0,
-                &self.query,
-                CaseMatching::Smart,
+                &text,
+                self.case_matching(),
                 Normalization::Smart,
                 append,
             );
@@ -137,7 +212,7 @@ impl App {
         self.query.clear();
         self.stop_walker();
         self.mode = Mode::Browse;
-        self.browse_entries = model::browse(&self.cwd, self.show_hidden);
+        self.browse_entries = self.reload_entries();
         self.selected = 0;
         self.scroll_offset = 0;
     }
@@ -234,6 +309,16 @@ impl App {
                     Cmd::QuitCd
                 }
             }
+            KeyCode::Enter if ctrl => {
+                if self.mode == Mode::Command {
+                    return Cmd::None;
+                }
+                let count = self.selectable_count();
+                if count == 0 || self.selected >= count {
+                    return Cmd::None;
+                }
+                self.resolve_entry(self.selected, true)
+            }
             KeyCode::Enter => {
                 if self.mode == Mode::Command {
                     let cmd = self.query[1..].trim();
@@ -246,32 +331,7 @@ impl App {
                 if count == 0 || self.selected >= count {
                     return Cmd::None;
                 }
-                let entries = match self.mode {
-                    Mode::Browse | Mode::Command => &self.browse_entries,
-                    Mode::Search => {
-                        // We need the entry at selected; rebuild
-                        let snap = self.nucleo.snapshot();
-                        // Can't borrow snap across await; collect
-                        return snap
-                            .get_matched_item(self.selected as u32)
-                            .map(|m| {
-                                let e = m.data;
-                                match e.kind {
-                                    crate::model::Kind::Dir => Cmd::EnterDir(e.abs.clone()),
-                                    crate::model::Kind::File => Cmd::OpenFile(e.abs.clone()),
-                                }
-                            })
-                            .unwrap_or(Cmd::None);
-                    }
-                };
-                if self.selected >= entries.len() {
-                    return Cmd::None;
-                }
-                let e = &entries[self.selected];
-                match e.kind {
-                    crate::model::Kind::Dir => Cmd::EnterDir(e.abs.clone()),
-                    crate::model::Kind::File => Cmd::OpenFile(e.abs.clone()),
-                }
+                self.resolve_entry(self.selected, false)
             }
             KeyCode::Backspace => {
                 if self.query.is_empty() {
@@ -290,60 +350,57 @@ impl App {
                 if count == 0 || self.selected >= count {
                     return Cmd::None;
                 }
-                let entries = match self.mode {
-                    Mode::Browse | Mode::Command => &self.browse_entries,
-                    Mode::Search => {
-                        let snap = self.nucleo.snapshot();
-                        return snap
-                            .get_matched_item(self.selected as u32)
-                            .map(|m| {
-                                if m.data.kind == crate::model::Kind::Dir {
-                                    Cmd::EnterDir(m.data.abs.clone())
-                                } else {
-                                    Cmd::None
-                                }
-                            })
-                            .unwrap_or(Cmd::None);
-                    }
-                };
-                if self.selected >= entries.len() {
-                    return Cmd::None;
-                }
-                if entries[self.selected].kind == crate::model::Kind::Dir {
-                    Cmd::EnterDir(entries[self.selected].abs.clone())
-                } else {
-                    Cmd::None
+                let cmd = self.resolve_entry(self.selected, false);
+                match cmd {
+                    Cmd::OpenFile(_) => Cmd::None,
+                    other => other,
                 }
             }
             KeyCode::Up => {
-                self.selected = self.selected.saturating_sub(1);
+                let count = self.selectable_count();
+                if count > 0 {
+                    self.selected = if self.settings.wrap_selection && self.selected == 0 {
+                        count - 1
+                    } else {
+                        self.selected.saturating_sub(1)
+                    };
+                }
                 Cmd::None
             }
             KeyCode::Char('k') if ctrl => {
-                self.selected = self.selected.saturating_sub(1);
+                let count = self.selectable_count();
+                if count > 0 {
+                    self.selected = if self.settings.wrap_selection && self.selected == 0 {
+                        count - 1
+                    } else {
+                        self.selected.saturating_sub(1)
+                    };
+                }
                 Cmd::None
             }
             KeyCode::Down => {
                 let count = self.selectable_count();
                 if count > 0 {
-                    self.selected = (self.selected + 1).min(count - 1);
+                    self.selected = if self.settings.wrap_selection && self.selected + 1 >= count {
+                        0
+                    } else {
+                        (self.selected + 1).min(count - 1)
+                    };
                 }
                 Cmd::None
             }
             KeyCode::Char('j') if ctrl => {
                 let count = self.selectable_count();
                 if count > 0 {
-                    self.selected = (self.selected + 1).min(count - 1);
+                    self.selected = if self.settings.wrap_selection && self.selected + 1 >= count {
+                        0
+                    } else {
+                        (self.selected + 1).min(count - 1)
+                    };
                 }
                 Cmd::None
             }
-            KeyCode::Char('l') if ctrl => {
-                let count = self.selectable_count();
-                if count == 0 || self.selected >= count {
-                    return Cmd::None;
-                }
-                self.activate_entry(self.selected)
-            }
+            KeyCode::Char('l') if ctrl => self.resolve_entry(self.selected, false),
 
             KeyCode::Char('d') if ctrl => {
                 let half = self.list_rows() / 2;
@@ -452,28 +509,7 @@ impl App {
     }
 
     fn activate_entry(&self, idx: usize) -> Cmd {
-        match self.mode {
-            Mode::Command => Cmd::None,
-            Mode::Browse => {
-                if idx >= self.browse_entries.len() {
-                    return Cmd::None;
-                }
-                let e = &self.browse_entries[idx];
-                match e.kind {
-                    crate::model::Kind::Dir => Cmd::EnterDir(e.abs.clone()),
-                    crate::model::Kind::File => Cmd::OpenFile(e.abs.clone()),
-                }
-            }
-            Mode::Search => {
-                let snap = self.nucleo.snapshot();
-                snap.get_matched_item(idx as u32)
-                    .map(|m| match m.data.kind {
-                        crate::model::Kind::Dir => Cmd::EnterDir(m.data.abs.clone()),
-                        crate::model::Kind::File => Cmd::OpenFile(m.data.abs.clone()),
-                    })
-                    .unwrap_or(Cmd::None)
-            }
-        }
+        self.resolve_entry(idx, false)
     }
 }
 
@@ -504,7 +540,7 @@ mod tests {
 
     fn app_with_entries(n: usize) -> (App, PathBuf) {
         let dir = fixture_dir(n);
-        let app = App::new(dir.clone());
+        let app = App::new(dir.clone(), Settings::default());
         (app, dir)
     }
 
@@ -679,5 +715,57 @@ mod tests {
                 cmd
             ),
         }
+    }
+
+    #[test]
+    fn ctrl_enter_quits_search_match_without_z() {
+        let (mut app, _dir) = app_with_entries(5);
+        app.last_area = Rect::new(0, 0, 80, 20);
+        app.set_query("dir".into());
+        // Spin nucleo until snapshot is non-empty (walker thread pushes async)
+        for _ in 0..500 {
+            app.nucleo.tick(10);
+            if app.nucleo.snapshot().matched_item_count() > 0 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        let count = app.nucleo.snapshot().matched_item_count();
+        assert!(count > 0, "nucleo should have matched items, got {count}");
+        app.selected = 0;
+        assert!(matches!(
+            app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL)),
+            Cmd::QuitToDir(_)
+        ));
+        assert!(matches!(
+            app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+            Cmd::EnterDir(_)
+        ));
+    }
+
+    #[test]
+    fn z_flag_quits_on_plain_enter() {
+        let s = Settings {
+            quit_on_match: true,
+            ..Settings::default()
+        };
+        let dir = fixture_dir(5);
+        let mut app = App::new(dir, s);
+        app.last_area = Rect::new(0, 0, 80, 20);
+        app.set_query("dir".into());
+        for _ in 0..500 {
+            app.nucleo.tick(10);
+            if app.nucleo.snapshot().matched_item_count() > 0 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        let count = app.nucleo.snapshot().matched_item_count();
+        assert!(count > 0, "nucleo should have matched items, got {count}");
+        app.selected = 0;
+        assert!(matches!(
+            app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+            Cmd::QuitToDir(_)
+        ));
     }
 }

@@ -34,9 +34,18 @@ fn has_nul(path: &Path) -> bool {
     }
 }
 
-pub fn resolve_editor() -> (String, Vec<String>) {
+pub fn resolve_editor(override_cmd: Option<&str>) -> (String, Vec<String>) {
+    if let Some(s) = override_cmd {
+        let trimmed = s.trim();
+        if !trimmed.is_empty() {
+            let mut parts = trimmed.split_whitespace();
+            let prog = parts.next().unwrap_or("vi").to_string();
+            let args: Vec<String> = parts.map(String::from).collect();
+            return (prog, args);
+        }
+    }
     for var in ["VISUAL", "EDITOR"] {
-        if let Ok(val) = env::var(var) {
+        if let Ok(val) = std::env::var(var) {
             if !val.is_empty() {
                 let mut parts = val.split_whitespace();
                 let prog = parts.next().unwrap_or("vi").to_string();
