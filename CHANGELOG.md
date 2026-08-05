@@ -2,6 +2,23 @@
 
 All notable changes to sicth are documented in this file.
 
+## [1.1.0] - 2026-08-05
+
+### Added
+
+- Add 22 single-char CLI flags and config file system
+
+### Documentation
+
+- Add CONFIG_REFERENCE.md with full flag/config reference
+
+### Fixed
+
+- Change Ctrl+Enter to Alt+Enter for quit-on-match shortcut
+
+### Miscellaneous
+
+- Update versions and hashes for v1.0.3 [skip ci]
 ## [1.0.3] - 2026-08-04
 
 ### Added
@@ -16,6 +33,10 @@ All notable changes to sicth are documented in this file.
 
 - .gitignore additions
 - Update versions and hashes for v1.0.2 [skip ci]
+
+### Release
+
+- V1.0.3
 ## [1.0.2] - 2026-08-04
 
 ### Fixed
