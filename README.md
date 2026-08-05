@@ -15,7 +15,7 @@
 * Mouse support (click, double-click, scroll)
 * Shell integration — `cd` on exit via `sc` wrapper, `!command` execution
 * `.gitignore`-aware recursive search
-* Back/forward navigation history
+* 22 single-char flags and a config file — tweak every visual and behavioral toggle
 
 ## Installation
 
@@ -76,6 +76,31 @@ sicth --setup
 This adds an alias or function named `sc` to your shell profile.
 Running `sc` opens sicth, and quitting will `cd` your shell to the last browsed directory.
 
+
+## Configuration
+
+Every visual and behavioral toggle can be set permanently via a config file
+or overridden on the command line. See the full reference:
+
+**[CONFIG_REFERENCE.md](CONFIG_REFERENCE.md)**
+
+Quick start — create `~/.config/sicth/config`:
+
+```
+# Monochrome, no mouse, quit on search match
+colors = false
+mouse = false
+quit_on_match = true
+
+# Always start from home
+home_scope = true
+```
+
+```sh
+# Or pass flags ad-hoc:
+sicth -c -m -z -H
+```
+
 ## Keybinds
 
 | Key | Action |
@@ -85,6 +110,7 @@ Running `sc` opens sicth, and quitting will `cd` your shell to the last browsed 
 | `Ctrl+d` | Half-page down |
 | `Ctrl+u` | Half-page up |
 | `Enter` / `Ctrl+l` | Enter directory / Open file |
+| `Ctrl+Enter` | Quit on search match (cd to dir / open file) |
 | `Right` | Enter directory (dirs only) |
 | `Left` / `Ctrl+h` | Go to parent directory |
 | `Ctrl+q` | Navigate back in history |
@@ -100,6 +126,7 @@ Running `sc` opens sicth, and quitting will `cd` your shell to the last browsed 
 | `Left Click` | Select entry |
 | `Double Click`| Enter directory / Open file |
 | `←` / `→` / `↑` buttons | Back, forward, parent directory |
+
 ## License
 
 GPL-3.0-only. See [LICENSE](LICENSE).
