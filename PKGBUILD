@@ -1,6 +1,6 @@
 # Maintainer: reekta92 mdag.92988@protonmail.com
 pkgname=sicth-bin
-pkgver=1.0.3
+pkgver=1.1.0
 pkgrel=1
 pkgdesc="Minimal TUI file navigator with fuzzy search"
 url="https://github.com/reekta92/sicth"
@@ -10,7 +10,7 @@ provides=("sicth")
 conflicts=("sicth")
 depends=("gcc-libs")
 source=("https://github.com/reekta92/sicth/releases/download/v${pkgver}/sicth-x86_64-unknown-linux-gnu.tar.xz")
-sha256sums=("cd33a034c5ae5c58b5b8846a8d6d615292396cd91dea6afec7d5666d1481005b")
+sha256sums=("632a224e6c172f85e056ee0258a9c0aa629319ed767386809eb9e3bad3ca9f8d")
 
 package() {
     install -Dm755 "sicth" -t "$pkgdir/usr/bin"
