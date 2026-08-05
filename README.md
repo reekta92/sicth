@@ -110,7 +110,7 @@ sicth -c -m -z -H
 | `Ctrl+d` | Half-page down |
 | `Ctrl+u` | Half-page up |
 | `Enter` / `Ctrl+l` | Enter directory / Open file |
-| `Ctrl+Enter` | Quit on search match (cd to dir / open file) |
+| `Alt+Enter` | Quit on search match (cd to dir / open file) |
 | `Right` | Enter directory (dirs only) |
 | `Left` / `Ctrl+h` | Go to parent directory |
 | `Ctrl+q` | Navigate back in history |

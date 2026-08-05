@@ -299,6 +299,7 @@ impl App {
 
     pub fn on_key(&mut self, k: KeyEvent) -> Cmd {
         let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
+        let alt = k.modifiers.contains(KeyModifiers::ALT);
         match k.code {
             KeyCode::Char('c') if ctrl => Cmd::QuitNoCd,
             KeyCode::Esc => {
@@ -309,7 +310,7 @@ impl App {
                     Cmd::QuitCd
                 }
             }
-            KeyCode::Enter if ctrl => {
+            KeyCode::Enter if alt => {
                 if self.mode == Mode::Command {
                     return Cmd::None;
                 }
@@ -718,7 +719,7 @@ mod tests {
     }
 
     #[test]
-    fn ctrl_enter_quits_search_match_without_z() {
+    fn alt_enter_quits_search_match_without_z() {
         let (mut app, _dir) = app_with_entries(5);
         app.last_area = Rect::new(0, 0, 80, 20);
         app.set_query("dir".into());
@@ -734,7 +735,7 @@ mod tests {
         assert!(count > 0, "nucleo should have matched items, got {count}");
         app.selected = 0;
         assert!(matches!(
-            app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL)),
+            app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT)),
             Cmd::QuitToDir(_)
         ));
         assert!(matches!(

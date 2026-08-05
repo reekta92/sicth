@@ -57,7 +57,7 @@ SHELL\n  \
 ACTIONS\n  \
     Esc                 clear query / quit (when query is empty)\n  \
     Ctrl+c              quit without writing out-file\n  \
-    Ctrl+Enter          quit on search match (cd to dir / open file)\n  \
+    Alt+Enter           quit on search match (cd to dir / open file)\n  \
     Ctrl+.              toggle hidden files\n  \
     Ctrl+l              enter directory or open file (vim mode)\n\n\
 TYPING\n  \
