@@ -138,7 +138,7 @@ fn run_app(settings: Settings, out_file: Option<PathBuf>) {
 
     let action = quit_action.unwrap_or(Cmd::QuitCd);
 
-    terminal::teardown(&mut term, settings.mouse);
+    terminal::teardown(&mut term, settings.mouse, settings.fullscreen);
 
     match action {
         Cmd::QuitCd => {

@@ -1,7 +1,7 @@
 use ratatui::crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode},
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{backend::CrosstermBackend, Terminal, TerminalOptions, Viewport};
 use std::io::{self, Stdout};
@@ -9,8 +9,6 @@ use std::io::{self, Stdout};
 use crate::settings::Settings;
 
 pub type Tui = Terminal<CrosstermBackend<Stdout>>;
-
-/// Height as percent of terminal rows, clamped 10-90%.
 pub fn popup_height(term_rows: u16, percent: u16) -> u16 {
     let p = percent.clamp(10, 90);
     if term_rows < 8 {
@@ -25,6 +23,9 @@ pub fn setup(sett: &Settings) -> io::Result<(Tui, TerminalGuard)> {
     if sett.mouse {
         execute!(out, EnableMouseCapture)?;
     }
+    if sett.fullscreen {
+        execute!(out, EnterAlternateScreen)?;
+    }
     let viewport = if sett.fullscreen {
         Viewport::Fullscreen
     } else {
@@ -32,26 +33,38 @@ pub fn setup(sett: &Settings) -> io::Result<(Tui, TerminalGuard)> {
         Viewport::Inline(popup_height(rows, sett.popup_percent))
     };
     let term = Terminal::with_options(CrosstermBackend::new(out), TerminalOptions { viewport })?;
-    Ok((term, TerminalGuard { mouse: sett.mouse }))
+    Ok((
+        term,
+        TerminalGuard {
+            mouse: sett.mouse,
+            fullscreen: sett.fullscreen,
+        },
+    ))
 }
-
 /// Normal-path teardown. Clear erases the popup corpse — inline viewport does NOT auto-erase.
-pub fn teardown(term: &mut Tui, mouse: bool) {
+pub fn teardown(term: &mut Tui, mouse: bool, fullscreen: bool) {
     let _ = term.clear();
     let _ = term.show_cursor();
+    if fullscreen {
+        let _ = execute!(io::stdout(), LeaveAlternateScreen);
+    }
     let _ = disable_raw_mode();
     if mouse {
         let _ = execute!(io::stdout(), DisableMouseCapture);
     }
 }
 
-/// Panic path: raw mode + mouse capture must not survive a panic.
+/// Panic path: raw mode + mouse capture + alternate screen must not survive a panic.
 pub struct TerminalGuard {
     pub mouse: bool,
+    pub fullscreen: bool,
 }
 
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
+        if self.fullscreen {
+            let _ = execute!(io::stdout(), LeaveAlternateScreen);
+        }
         let _ = disable_raw_mode();
         if self.mouse {
             let _ = execute!(io::stdout(), DisableMouseCapture);
