@@ -98,7 +98,7 @@ on:
 
 jobs:
   release:
-    uses: OWNER/shared-workflows/.github/workflows/rust-release.yml@main
+    uses: reekta92/shared-workflows/.github/workflows/rust-release.yml@main
     with:
       BIN_NAME: "sicth"
       PKG_PREFIX: "sicth"
