@@ -36,7 +36,7 @@ SHORT FLAGS:\n    \
     -n  no icons           -c  no color           -b  no bold dirs\n    \
     -l  no trailing slash  -q  hide cwd path      -m  disable mouse (hides nav buttons)\n    \
     -F  full-screen        -o  always system-open -w  wrap selection\n    \
-    -H  home dir scope     -p N  popup height %   -e CMD  override editor\n    \
+    -H  home dir scope     -k  keep app open     -p N  popup height %   -e CMD  override editor\n    \
     --config <path>  use this config file\n\
 \n\
 FLAGS override the config file (default $XDG_CONFIG_HOME/sicth/config or ~/.config/sicth/config)\n"
@@ -97,99 +97,124 @@ fn run_app(settings: Settings, out_file: Option<PathBuf>) {
     };
     let mut app = App::new(cwd, settings.clone());
 
-    let (mut term, _guard) = terminal::setup(&settings).unwrap_or_else(|e| {
-        eprintln!("sicth: failed to initialize terminal: {e}");
-        process::exit(1);
-    });
-
-    let mut quit_action: Option<Cmd> = None;
-
     loop {
-        let _ = app.nucleo.tick(10);
+        let (mut term, _guard) = terminal::setup(&settings).unwrap_or_else(|e| {
+            eprintln!("sicth: failed to initialize terminal: {e}");
+            process::exit(1);
+        });
 
-        if let Err(e) = term.draw(|f| render::draw(f, &mut app)) {
-            eprintln!("sicth: draw error: {e}");
-            break;
-        }
+        let mut quit_action: Option<Cmd> = None;
 
-        if event::poll(Duration::from_millis(16)).unwrap_or(false) {
-            match event::read() {
-                Ok(Event::Key(k)) if k.kind == KeyEventKind::Press => {
-                    let cmd = app.on_key(k);
-                    quit_action = dispatch(&mut app, cmd);
+        loop {
+            let _ = app.nucleo.tick(10);
+
+            if let Err(e) = term.draw(|f| render::draw(f, &mut app)) {
+                eprintln!("sicth: draw error: {e}");
+                break;
+            }
+
+            if event::poll(Duration::from_millis(16)).unwrap_or(false) {
+                match event::read() {
+                    Ok(Event::Key(k)) if k.kind == KeyEventKind::Press => {
+                        let cmd = app.on_key(k);
+                        quit_action = dispatch(&mut app, cmd);
+                    }
+                    Ok(Event::Mouse(m)) if settings.mouse => {
+                        let area = app.last_area;
+                        let cmd = app.on_mouse(m, area);
+                        quit_action = dispatch(&mut app, cmd);
+                    }
+                    Ok(Event::Resize(_, rows)) => {
+                        let _ = rows;
+                    }
+                    Err(_) => break,
+                    _ => {}
                 }
-                Ok(Event::Mouse(m)) if settings.mouse => {
-                    let area = app.last_area;
-                    let cmd = app.on_mouse(m, area);
-                    quit_action = dispatch(&mut app, cmd);
-                }
-                Ok(Event::Resize(_, rows)) => {
-                    let _ = rows;
-                }
-                Err(_) => break,
-                _ => {}
+            }
+
+            if quit_action.is_some() {
+                break;
             }
         }
 
-        if quit_action.is_some() {
-            break;
-        }
-    }
+        let action = quit_action.unwrap_or(Cmd::QuitCd);
 
-    let action = quit_action.unwrap_or(Cmd::QuitCd);
+        terminal::teardown(&mut term, settings.mouse, settings.fullscreen);
 
-    terminal::teardown(&mut term, settings.mouse, settings.fullscreen);
-
-    match action {
-        Cmd::QuitCd => {
-            open::write_out_script(&out_file, &app.cwd, None);
-            process::exit(0);
-        }
-        Cmd::QuitToDir(dir) => {
-            open::write_out_script(&out_file, &dir, None);
-            process::exit(0);
-        }
-        Cmd::QuitNoCd => {
-            process::exit(130);
-        }
-        Cmd::OpenFile(path) => {
-            open::write_out_script(&out_file, &app.cwd, None);
-            let how = if settings.open_system {
-                open::How::System
-            } else {
-                open::classify(&path)
-            };
-            match how {
-                open::How::Editor => {
-                    let (prog, args) = open::resolve_editor(settings.editor.as_deref());
-                    let status = process::Command::new(&prog).args(&args).arg(&path).status();
-                    match status {
-                        Ok(s) if s.success() => process::exit(0),
-                        Ok(s) => process::exit(s.code().unwrap_or(1)),
-                        Err(e) => {
-                            eprintln!("sicth: failed to launch editor: {e}");
-                            process::exit(1);
+        match action {
+            Cmd::QuitCd => {
+                open::write_out_script(&out_file, &app.cwd, None);
+                process::exit(0);
+            }
+            Cmd::QuitToDir(dir) => {
+                open::write_out_script(&out_file, &dir, None);
+                process::exit(0);
+            }
+            Cmd::QuitNoCd => {
+                process::exit(130);
+            }
+            Cmd::OpenFile(path) => {
+                open::write_out_script(&out_file, &app.cwd, None);
+                let how = if settings.open_system {
+                    open::How::System
+                } else {
+                    open::classify(&path)
+                };
+                match how {
+                    open::How::Editor => {
+                        let (prog, args) = open::resolve_editor(settings.editor.as_deref());
+                        let status = process::Command::new(&prog).args(&args).arg(&path).status();
+                        match status {
+                            Ok(s) if s.success() => {
+                                if !settings.keep_open {
+                                    process::exit(0);
+                                }
+                            }
+                            Ok(s) => {
+                                if settings.keep_open {
+                                    eprintln!(
+                                        "sicth: editor exited with {}",
+                                        s.code().unwrap_or(1)
+                                    );
+                                } else {
+                                    process::exit(s.code().unwrap_or(1));
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("sicth: failed to launch editor: {e}");
+                                if !settings.keep_open {
+                                    process::exit(1);
+                                }
+                            }
+                        }
+                    }
+                    open::How::System => {
+                        if let Err(e) = ::open::that_detached(&path) {
+                            eprintln!("sicth: failed to open: {e}");
+                            if !settings.keep_open {
+                                process::exit(1);
+                            }
+                        } else if !settings.keep_open {
+                            process::exit(0);
                         }
                     }
                 }
-                open::How::System => {
-                    if let Err(e) = ::open::that_detached(&path) {
-                        eprintln!("sicth: failed to open: {e}");
-                        process::exit(1);
-                    }
-                    process::exit(0);
+                if settings.keep_open {
+                    app.reload();
                 }
             }
-        }
-        Cmd::RunCommand(cmd) => {
-            if out_file.is_none() {
-                eprintln!("sicth: !command requires the sc shell function (run: sicth --setup)");
-                process::exit(1);
+            Cmd::RunCommand(cmd) => {
+                if out_file.is_none() {
+                    eprintln!(
+                        "sicth: !command requires the sc shell function (run: sicth --setup)"
+                    );
+                    process::exit(1);
+                }
+                open::write_out_script(&out_file, &app.cwd, Some(&cmd));
+                process::exit(0);
             }
-            open::write_out_script(&out_file, &app.cwd, Some(&cmd));
-            process::exit(0);
+            _ => unreachable!("dispatch only yields quit commands"),
         }
-        _ => unreachable!("dispatch only yields quit commands"),
     }
 }
 

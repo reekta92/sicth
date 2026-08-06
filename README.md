@@ -94,6 +94,9 @@ quit_on_match = true
 
 # Always start from home
 home_scope = true
+
+# Keep the popup open after opening a file
+keep_open = true
 ```
 
 ```sh

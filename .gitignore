@@ -3,3 +3,6 @@ target/
 dist/
 *.AppImage
 result
+
+# AI Sandbox and local experimental scripts
+development/

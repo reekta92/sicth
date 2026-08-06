@@ -1,0 +1,20 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump type"
+        required: true
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+
+jobs:
+  release:
+    uses: OWNER/shared-workflows/.github/workflows/rust-release.yml@main
+    with:
+      BIN_NAME: "sicth"
+      PKG_PREFIX: "sicth"
+      AUR_PKGNAME: "sicth-bin"
+      SMOKE_ARGS: "--version"

@@ -69,6 +69,7 @@ argv element — they terminate the cluster.
 | `-F` | `fullscreen` | bool | `false` | Run in full-screen mode instead of the default inline popup. The popup-height flag (`-p`) is ignored. |
 | `-w` | `wrap_selection` | bool | `false` | Wrap selection at list boundaries: pressing Down on the last entry jumps to the first; pressing Up on the first jumps to the last. |
 | `-H` | `home_scope` | bool | `false` | Start sicth in the user's home directory (`$HOME`) instead of the current working directory. All browsing and searching is scoped to home. |
+| `-k` | `keep_open` | bool | `false` | Keep sicth open after opening a file: return to the popup when the editor exits (or immediately after the system opener launches) instead of exiting the app. |
 | `-o` | `open_system` | bool | `false` | Always open files with the system opener (xdg-open / open) instead of sicth's content-type detection. |
 | `-p N` | `popup_percent` | u16 | `40` | Popup height as a percentage of terminal rows. Clamped to 10–90. Ignored when `-F` (fullscreen) is set. |
 | `-e CMD` | `editor` | string | — | Override the editor command. Default is `$VISUAL`, then `$EDITOR`, then `vi`. `CMD` is split on whitespace: `-e "nvim -R"` passes `-R` as an argument. |

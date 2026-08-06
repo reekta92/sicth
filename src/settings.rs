@@ -38,6 +38,7 @@ pub struct Settings {
     pub open_system: bool,
     pub wrap_selection: bool,
     pub home_scope: bool,
+    pub keep_open: bool,
 }
 
 impl Default for Settings {
@@ -66,6 +67,7 @@ impl Default for Settings {
             open_system: false,
             wrap_selection: false,
             home_scope: false,
+            keep_open: false,
         }
     }
 }
@@ -130,6 +132,7 @@ impl Settings {
             "open_system" => self.open_system = parse_bool(value, self.open_system),
             "wrap_selection" => self.wrap_selection = parse_bool(value, self.wrap_selection),
             "home_scope" => self.home_scope = parse_bool(value, self.home_scope),
+            "keep_open" => self.keep_open = parse_bool(value, self.keep_open),
             _ => { /* unknown key — ignore */ }
         }
     }
@@ -286,7 +289,11 @@ fn parse_args_inner(argv: &[String]) -> Result<Parsed, ParseError> {
             i += 1;
             continue;
         }
-        // short cluster: starts with `-`, length >= 2, not `--`
+        if a == "--keep-open" {
+            settings.keep_open = true;
+            i += 1;
+            continue;
+        }
         if a.starts_with('-') && a.len() >= 2 && !a.starts_with("--") {
             let chars: Vec<char> = a[1..].chars().collect();
             let mut ci = 0;
@@ -316,6 +323,7 @@ fn parse_args_inner(argv: &[String]) -> Result<Parsed, ParseError> {
                     'o' => settings.open_system = true,
                     'w' => settings.wrap_selection = true,
                     'H' => settings.home_scope = true,
+                    'k' => settings.keep_open = true,
                     'h' => return Ok(Parsed::Help),
                     'p' => {
                         let val: String = if ci < chars.len() {
@@ -420,6 +428,7 @@ popup_percent = 70
 editor = nvim
 open_system = true
 wrap_selection = true
+keep_open = true
 ";
         let p = write_config(content);
         let s = parse_config(&p);
@@ -445,6 +454,7 @@ wrap_selection = true
         assert_eq!(s.editor.as_deref(), Some("nvim"));
         assert!(s.open_system);
         assert!(s.wrap_selection);
+        assert!(s.keep_open);
     }
 
     #[test]
@@ -606,6 +616,35 @@ wrap_selection = true
     }
 
     #[test]
+    fn flag_k_keep_open_short() {
+        let argv = ["-k".to_string()];
+        let parsed = parse_args_inner(&argv).unwrap();
+        match parsed {
+            Parsed::Run { settings, .. } => assert!(settings.keep_open),
+            _ => panic!("expected Run"),
+        }
+    }
+
+    #[test]
+    fn flag_keep_open_long() {
+        let argv = ["--keep-open".to_string()];
+        let parsed = parse_args_inner(&argv).unwrap();
+        match parsed {
+            Parsed::Run { settings, .. } => assert!(settings.keep_open),
+            _ => panic!("expected Run"),
+        }
+    }
+
+    #[test]
+    fn keep_open_defaults_off() {
+        let parsed = parse_args_inner(&[]).unwrap();
+        match parsed {
+            Parsed::Run { settings, .. } => assert!(!settings.keep_open),
+            _ => panic!("expected Run"),
+        }
+    }
+
+    #[test]
     fn meta_setup_short_circuits() {
         let argv = ["--setup".to_string(), "-n".to_string()];
         let parsed = parse_args_inner(&argv).unwrap();
@@ -638,5 +677,6 @@ wrap_selection = true
         assert!(s.dirs_first);
         assert_eq!(s.popup_percent, 40);
         assert_eq!(s.sort_by, SortKey::Name);
+        assert!(!s.keep_open);
     }
 }
