@@ -2,6 +2,28 @@
 
 All notable changes to sicth are documented in this file.
 
+## [1.1.1] - 2026-08-07
+
+### Added
+
+- Added -k flag, keep_running config
+
+### CI
+
+- Fixed input call routing
+- Fixed input call routing
+
+### Fixed
+
+- Fullscreen mode not redrawing the terminal
+
+### Miscellaneous
+
+- Update versions and hashes for v1.1.0 [skip ci]
+
+### Release
+
+- V1.1.1
 ## [1.1.0] - 2026-08-05
 
 ### Added
@@ -19,6 +41,10 @@ All notable changes to sicth are documented in this file.
 ### Miscellaneous
 
 - Update versions and hashes for v1.0.3 [skip ci]
+
+### Release
+
+- V1.1.0
 ## [1.0.3] - 2026-08-04
 
 ### Added
