@@ -98,6 +98,8 @@ on:
 
 jobs:
   release:
+    permissions:
+      contents: write
     uses: reekta92/shared-workflows/.github/workflows/rust-release.yml@main
     with:
       BIN_NAME: "sicth"
