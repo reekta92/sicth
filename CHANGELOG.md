@@ -24,6 +24,7 @@ All notable changes to sicth are documented in this file.
 ### Release
 
 - V1.1.1
+- V1.1.1
 ## [1.1.0] - 2026-08-05
 
 ### Added
