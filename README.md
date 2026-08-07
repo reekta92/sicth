@@ -1,5 +1,5 @@
 # sicth
- 
+
 [![CI](https://github.com/reekta92/sicth/actions/workflows/ci.yml/badge.svg)](https://github.com/reekta92/sicth/actions/workflows/ci.yml)
 [![Crates.io Downloads](https://img.shields.io/crates/d/sicth)](https://crates.io/crates/sicth)
 [![License: GPL-3.0-only](https://img.shields.io/badge/License-GPL_3.0_only-blue.svg)](LICENSE)
