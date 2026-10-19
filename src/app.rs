@@ -668,19 +668,19 @@ mod tests {
         app.set_dir(sub.clone());
         assert_eq!(app.cwd, sub);
         assert_eq!(app.nav_back.len(), 1);
-        assert!(app.nav_forward.is_empty());
+        assert_eq!(app.nav_forward, Vec::<PathBuf>::new());
 
         // Go back
         app.navigate_back();
         assert_eq!(app.cwd, dir);
-        assert!(app.nav_back.is_empty());
+        assert_eq!(app.nav_back, Vec::<PathBuf>::new());
         assert_eq!(app.nav_forward.len(), 1);
 
         // Go forward
         app.navigate_forward();
         assert_eq!(app.cwd, sub);
         assert_eq!(app.nav_back.len(), 1);
-        assert!(app.nav_forward.is_empty());
+        assert_eq!(app.nav_forward, Vec::<PathBuf>::new());
     }
 
     #[test]
