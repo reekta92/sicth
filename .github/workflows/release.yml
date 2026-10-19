@@ -4,13 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       bump:
-        description: "Version bump type (ignored for prerelease continuation/graduation, override, overwrite)"
+        description: "Version bump type (ignored for prerelease continuation/graduation or exact version)"
         required: true
         type: choice
         options: [patch, minor, major]
         default: patch
       prerelease:
-        description: "Mark this release as a pre-release"
+        description: "Start or continue a pre-release"
         required: false
         type: boolean
         default: false
@@ -20,27 +20,22 @@ on:
         type: string
         default: rc
       override_version:
-        description: "Manually set the version (strict semver, e.g. 1.2.3-rc.0). Ignores 'bump'."
+        description: "Exact, strictly newer semver; overrides bump and prerelease controls"
         required: false
         type: string
         default: ""
-      overwrite_release:
-        description: "Rebuild/replace the release at the current version (force-move tag, re-upload assets). Ignores 'bump'."
-        required: false
-        type: boolean
-        default: false
       target_branch:
         description: "Branch to base the release on"
         required: false
         type: string
         default: main
       dry_run:
-        description: "Run gates + version calc + builds WITHOUT push/tag/release/publish"
+        description: "Validate and build the candidate without pushing or publishing"
         required: false
         type: boolean
         default: false
       skip_gates:
-        description: "Skip quality gates (emergency escape hatch)"
+        description: "Skip fmt/clippy/tests; package verification remains mandatory"
         required: false
         type: boolean
         default: false
@@ -75,13 +70,8 @@ on:
         required: false
         type: boolean
         default: true
-      publish_aur:
-        description: "Publish to AUR"
-        required: false
-        type: boolean
-        default: true
       update_docs:
-        description: "Post-release commit updating README/PKGBUILD"
+        description: "Post-release commit updating README/PKGBUILD artifact references"
         required: false
         type: boolean
         default: true
@@ -100,17 +90,16 @@ jobs:
   release:
     permissions:
       contents: write
-    uses: reekta92/.github/.github/workflows/rust-release.yml@main
+    uses: reekta92/.github/.github/workflows/rust-release.yml@746b77673ec0db7978ee464ba012cb601fcec4ef
     with:
+      release_kind: application
       BIN_NAME: "sicth"
       PKG_PREFIX: "sicth"
-      AUR_PKGNAME: "sicth-bin"
       SMOKE_ARGS: "--help"
       bump: ${{ inputs.bump }}
       prerelease: ${{ inputs.prerelease }}
       prerelease_identifier: ${{ inputs.prerelease_identifier }}
       override_version: ${{ inputs.override_version }}
-      overwrite_release: ${{ inputs.overwrite_release }}
       target_branch: ${{ inputs.target_branch }}
       dry_run: ${{ inputs.dry_run }}
       skip_gates: ${{ inputs.skip_gates }}
@@ -120,8 +109,9 @@ jobs:
       build_macos_intel: ${{ inputs.build_macos_intel }}
       build_targets: ${{ inputs.build_targets }}
       publish_crates: ${{ inputs.publish_crates }}
-      publish_aur: ${{ inputs.publish_aur }}
       update_docs: ${{ inputs.update_docs }}
       check_nix: ${{ inputs.check_nix }}
       create_discussion: ${{ inputs.create_discussion }}
-    secrets: inherit
+    secrets:
+      BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
