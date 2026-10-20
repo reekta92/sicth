@@ -10,4 +10,4 @@ jobs:
   ci:
     permissions:
       contents: read
-    uses: reekta92/.github/.github/workflows/ci.yml@cd3555902eaf73f17c76ca55108ab309afddd136
+    uses: reekta92/.github/.github/workflows/ci.yml@d4196e4596705427cae9b4a6572fcb952b195218
